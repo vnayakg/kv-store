@@ -1,13 +1,12 @@
 package server
 
 import (
-	"bufio"
-	"fmt"
+	"kv-store/store"
 	"log"
 	"net"
 )
 
-func Start(address string) error {
+func Start(address string, store *store.Store) error {
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
 		log.Printf("Failed to bind to address %s: %v", address, err)
@@ -22,8 +21,6 @@ func Start(address string) error {
 			continue
 		}
 
-		writer := bufio.NewWriter(connection)
-		writer.WriteString(fmt.Sprintf("hello %v", connection.RemoteAddr()))
-		writer.Flush()
+		go handleConnection(connection, store)
 	}
 }
