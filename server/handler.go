@@ -23,60 +23,40 @@ func handleConnection(conn net.Conn, store *store.Store) {
 
 		command, args, parseErr := parser.ParseCommandLine(line)
 		if parseErr != nil {
-			_, err := writer.WriteString(parseErr.Error() + "\n")
-			if err != nil {
-				log.Printf("Error writing response: %v", err)
-			}
-			writer.Flush()
+			writeResponse(writer, parseErr.Error())
 			continue
 		}
 
 		switch command {
 		case "SET":
 			if len(args) != 2 {
-				_, err := writer.WriteString("wrong number of arguments for SET command\n")
-				if err != nil {
-					log.Printf("Error writing response: %v", err)
-				}
-				writer.Flush()
+				writeResponse(writer, "wrong number of arguments for SET command")
 				continue
 			}
 			store.Set(args[0], args[1])
-			_, err := writer.WriteString("OK\n")
-			if err != nil {
-				log.Printf("Error writing response: %v", err)
-			}
-			writer.Flush()
+			writeResponse(writer, "OK")
 
 		case "GET":
 			if len(args) != 1 {
-				_, err := writer.WriteString("wrong number of arguments for GET command\n")
-				if err != nil {
-					log.Printf("Error writing response: %v", err)
-				}
-				writer.Flush()
+				writeResponse(writer, "wrong number of arguments for GET command")
 				continue
 			}
 			value, ok := store.Get(args[0])
 			if !ok {
-				_, err := writer.WriteString("nil\n")
-				if err != nil {
-					log.Printf("Error writing response: %v", err)
-				}
-				writer.Flush()
+				writeResponse(writer, "nil")
 			}
-			_, err := writer.WriteString(value + "\n")
-			if err != nil {
-				log.Printf("Error writing response: %v", err)
-			}
-			writer.Flush()
+			writeResponse(writer, value)
 
 		default:
-			_, err := writer.WriteString("command not supported\n")
-			if err != nil {
-				log.Printf("Error writing response: %v", err)
-			}
-			writer.Flush()
+			writeResponse(writer, "command not supported")
 		}
 	}
+}
+
+func writeResponse(writer *bufio.Writer, input string) {
+	_, err := writer.WriteString(input + "\n")
+	if err != nil {
+		log.Printf("Error writing response: %v", err)
+	}
+	writer.Flush()
 }
