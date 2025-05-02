@@ -130,6 +130,119 @@ func TestHandleConnection(t *testing.T) {
 				"0\n",
 			},
 		},
+		{
+			name: "INCR non-existent key",
+			commands: []string{
+				"INCR counter",
+			},
+			wantResponses: []string{
+				"1\n",
+			},
+		},
+		{
+			name: "INCR existing key",
+			storeSetup: func(s *store.Store) {
+				s.Set("counter", "5")
+			},
+			commands: []string{
+				"INCR counter",
+				"INCR counter",
+			},
+			wantResponses: []string{
+				"6\n",
+				"7\n",
+			},
+		},
+		{
+			name: "INCR non-integer value",
+			storeSetup: func(s *store.Store) {
+				s.Set("key", "hello")
+			},
+			commands: []string{
+				"INCR key",
+			},
+			wantResponses: []string{
+				"value is not an integer or out of range\n",
+			},
+		},
+		{
+			name: "INCR wrong number of args",
+			commands: []string{
+				"INCR",
+				"INCR key1 key2",
+			},
+			wantResponses: []string{
+				"wrong number of arguments for INCR command\n",
+				"wrong number of arguments for INCR command\n",
+			},
+		},
+		{
+			name: "INCRBY non-existent key",
+			commands: []string{
+				"INCRBY visits 10",
+			},
+			wantResponses: []string{
+				"10\n",
+			},
+		},
+		{
+			name: "INCRBY existing key positive",
+			storeSetup: func(s *store.Store) {
+				s.Set("visits", "100")
+			},
+			commands: []string{
+				"INCRBY visits 25",
+			},
+			wantResponses: []string{
+				"125\n",
+			},
+		},
+		{
+			name: "INCRBY existing key negative (decrement)",
+			storeSetup: func(s *store.Store) {
+				s.Set("visits", "50")
+			},
+			commands: []string{
+				"INCRBY visits -10",
+			},
+			wantResponses: []string{
+				"40\n",
+			},
+		},
+		{
+			name: "INCRBY non-integer value",
+			storeSetup: func(s *store.Store) {
+				s.Set("key", "world")
+			},
+			commands: []string{
+				"INCRBY key 5",
+			},
+			wantResponses: []string{
+				"value is not an integer or out of range\n",
+			},
+		},
+		{
+			name: "INCRBY non-integer increment",
+			commands: []string{
+				"INCRBY key abc",
+			},
+			wantResponses: []string{
+				"increment must be an integer\n",
+			},
+		},
+		{
+			name: "INCRBY wrong number of args",
+			commands: []string{
+				"INCRBY",
+				"INCRBY key",
+				"INCRBY key 10 extra",
+			},
+			wantResponses: []string{
+				"wrong number of arguments for INCRBY command\n",
+				"wrong number of arguments for INCRBY command\n",
+				"wrong number of arguments for INCRBY command\n",
+			},
+		},
 	}
 
 	for _, tc := range testCases {

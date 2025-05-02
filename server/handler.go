@@ -7,6 +7,7 @@ import (
 	"kv-store/store"
 	"log"
 	"net"
+	"strconv"
 )
 
 func handleConnection(conn net.Conn, store *store.Store) {
@@ -55,7 +56,36 @@ func handleConnection(conn net.Conn, store *store.Store) {
 			}
 			result := store.Del(args[0])
 			writeResponse(writer, fmt.Sprint(result))
+		
+		case "INCR":
+			if len(args) != 1 {
+				writeResponse(writer, "wrong number of arguments for INCR command")
+				continue
+			}
+			result, err := store.Incr(args[0])
+			if err != nil {
+				writeResponse(writer, err.Error())
+				continue
+			}
+			writeResponse(writer, fmt.Sprint(result))
+		case "INCRBY":
+			if len(args) != 2 {
+				writeResponse(writer, "wrong number of arguments for INCRBY command")
+				continue
+			}
 
+			increment, err := strconv.ParseInt(args[1], 10, 64)
+			if err != nil {
+				writeResponse(writer, "increment must be an integer")
+				continue
+			}
+
+			result, err := store.IncrBy(args[0], increment)
+			if err != nil {
+				writeResponse(writer, err.Error())
+				continue
+			}
+			writeResponse(writer, fmt.Sprint(result))
 		default:
 			writeResponse(writer, "command not supported")
 		}
