@@ -44,7 +44,7 @@ func TestHandleConnection(t *testing.T) {
 				"GET missingkey",
 			},
 			wantResponses: []string{
-				"nil\n",
+				"<nil>\n",
 			},
 		},
 		{
@@ -68,7 +68,7 @@ func TestHandleConnection(t *testing.T) {
 				"FOOBAR arg1 arg2",
 			},
 			wantResponses: []string{
-				"command not supported\n",
+				"ERR unknown command\n",
 			},
 		},
 		{
@@ -241,6 +241,36 @@ func TestHandleConnection(t *testing.T) {
 				"wrong number of arguments for INCRBY command\n",
 				"wrong number of arguments for INCRBY command\n",
 				"wrong number of arguments for INCRBY command\n",
+			},
+		},
+		{
+			name: "MULTI EXEC success",
+			commands: []string{
+				"MULTI",
+				"SET counter 10",
+				"INCR counter",
+				"EXEC",
+			},
+			wantResponses: []string{
+				"OK\n",
+				"QUEUED\n",
+				"QUEUED\n",
+				"1) OK\n",
+			},
+		},
+		{
+			name: "MULTI DISCARD success",
+			commands: []string{
+				"MULTI",
+				"SET counter 10",
+				"INCR counter",
+				"DISCARD",
+			},
+			wantResponses: []string{
+				"OK\n",
+				"QUEUED\n",
+				"QUEUED\n",
+				"OK\n",
 			},
 		},
 	}

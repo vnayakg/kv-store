@@ -3,6 +3,7 @@ package store
 import (
 	"fmt"
 	"math"
+	"reflect"
 	"strconv"
 	"testing"
 )
@@ -214,5 +215,146 @@ func TestIncrBy_ForOverflow(t *testing.T) {
 	}
 	if updatedValue != 0 {
 		t.Errorf("expected: 0, got: %q", updatedValue)
+	}
+}
+
+func TestStartTransaction_NoOnGoingTransaction(t *testing.T) {
+	store := CreateNewStore()
+
+	err := store.StartTransaction()
+
+	if err != nil {
+		t.Errorf("expected: should start transaction, got: %v", err)
+	}
+}
+
+func TestStartTransaction_OnGoingTransactionPresent(t *testing.T) {
+	store := CreateNewStore()
+	store.transaction = &Transaction{}
+
+	err := store.StartTransaction()
+
+	expectedError := fmt.Errorf("transaction already in progress")
+	if err.Error() != expectedError.Error() {
+		t.Errorf("expected: %v, got: %v", expectedError, err)
+	}
+}
+
+func TestQueueCommand_OnGoingTransactionPresent(t *testing.T) {
+	store := CreateNewStore()
+	store.transaction = &Transaction{}
+	commandName := "SET"
+	args := []string{"a", "2"}
+
+	err := store.QueueCommand(commandName, args)
+
+	if err != nil {
+		t.Errorf("expected: should queue command, got: %v", err)
+	}
+	expectedCommand := Command{commandName, args}
+	if store.transaction.commands[0].name != expectedCommand.name &&
+		!reflect.DeepEqual(store.transaction.commands[0].args, expectedCommand.args) {
+		t.Errorf("expected: %v, got: %v", expectedCommand, store.transaction.commands[0])
+	}
+}
+
+func TestQueueCommand_NoOnGoingTransactionPresent(t *testing.T) {
+	store := CreateNewStore()
+	commandName := "SET"
+	args := []string{"a", "2"}
+
+	err := store.QueueCommand(commandName, args)
+
+	expectedError := fmt.Errorf("no transaction in progress")
+	if err.Error() != expectedError.Error() {
+		t.Errorf("expected: %v, got: %v", expectedError, err)
+	}
+}
+
+func TestDiscardTransaction_OnGoingTransactionPresent(t *testing.T) {
+	store := CreateNewStore()
+	store.transaction = &Transaction{}
+
+	err := store.DiscardTransaction()
+
+	if err != nil {
+		t.Errorf("expected: should discard transaction, got: %v", err)
+	}
+	if store.transaction != nil {
+		t.Errorf("expected: %v, got %v", nil, store.transaction)
+	}
+}
+
+func TestDiscardTransaction_NoOnGoingTransactionPresent(t *testing.T) {
+	store := CreateNewStore()
+
+	err := store.DiscardTransaction()
+
+	expectedError := fmt.Errorf("no transaction in progress")
+	if err.Error() != expectedError.Error() {
+		t.Errorf("expected: %v, got: %v", expectedError, err)
+	}
+}
+
+func TestExecuteTransaction_OnGoingTransactionPresent(t *testing.T) {
+	store := CreateNewStore()
+	store.transaction = &Transaction{
+		commands: []Command{
+			{name: "GET", args: []string{"a"}},
+			{name: "SET", args: []string{"a", "1"}},
+			{name: "GET", args: []string{"a"}},
+			{name: "DEL", args: []string{"a"}},
+			{name: "INCR", args: []string{"a"}},
+			{name: "INCRBY", args: []string{"a", "9"}},
+		},
+		originalValues: make(map[string]*string),
+	}
+
+	result, err := store.ExecuteTransaction()
+
+	expectedResult := []string{"nil", "OK", "1", "1", "1", "10"}
+	if err != nil {
+		t.Errorf("expected: should execute transaction, got: %v", err)
+	}
+	if !reflect.DeepEqual(expectedResult, result) {
+		t.Errorf("expected: %v, got: %v", expectedResult, result)
+	}
+}
+
+func TestExecuteTransaction_NoOnGoingTransactionPresent(t *testing.T) {
+	store := CreateNewStore()
+
+	_, err := store.ExecuteTransaction()
+
+	expectedError := fmt.Errorf("no transaction in progress")
+	if err.Error() != expectedError.Error() {
+		t.Errorf("expected: %v, got: %v", expectedError, err)
+	}
+}
+
+func TestExecuteTransaction_ShouldRollbackOnError(t *testing.T) {
+	store := CreateNewStore()
+	store.Set("a", "1")
+	store.transaction = &Transaction{
+		commands: []Command{
+			{name: "GET", args: []string{"a"}},
+			{name: "INCR", args: []string{"a"}},
+			{name: "SET", args: []string{"b", "b"}},
+			{name: "INCR", args: []string{"b"}},
+		},
+		originalValues: make(map[string]*string),
+	}
+
+	result, err := store.ExecuteTransaction()
+
+	if err == nil {
+		t.Errorf("expected: should execute transaction, got: %v", err)
+	}
+	if result != nil {
+		t.Errorf("expected: nil, got: %v", result)
+	}
+	value, _ := store.Get("a")
+	if value != "1" {
+		t.Errorf("expected: Get('a') = 1, got: %v", 1)
 	}
 }
