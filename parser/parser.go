@@ -41,8 +41,5 @@ func ParseCommandLine(line string) (string, []string, error) {
 	if len(args) == 0{
 		return "", nil, fmt.Errorf("ERR empty command")
 	}
-	if len(args) == 1 {
-		return "", nil, fmt.Errorf("ERR missing args")
-	}
 	return strings.ToUpper(args[0]), args[1:], nil
 }

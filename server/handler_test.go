@@ -89,7 +89,7 @@ func TestHandleConnection(t *testing.T) {
 				"GET one two",
 			},
 			wantResponses: []string{
-				"ERR missing args\n",
+				"wrong number of arguments for GET command\n",
 				"wrong number of arguments for GET command\n",
 			},
 		},

@@ -21,7 +21,6 @@ func TestParseCommandLine(t *testing.T) {
 		{`SET key "val\"ue"`, "SET", []string{"key", `val"ue`}, nil},
 		{`SET key \"bad`, "SET", []string{`key`, `"bad`}, nil},
 		{`SET key "bad`, "", nil, fmt.Errorf("ERR syntax, mismatched quotes")},
-		{`SET`, "", nil, fmt.Errorf("ERR missing args")},
 		{``, "", nil, fmt.Errorf("ERR empty command")},
 	}
 
