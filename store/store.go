@@ -33,24 +33,7 @@ func (s *Store) Del(key string) int {
 }
 
 func (s *Store) Incr(key string) (int64, error) {
-	value, ok := s.data[key]
-
-	var currentValue int64 = 0
-	var err error
-
-	if ok {
-		currentValue, err = strconv.ParseInt(value, 10, 64)
-		if err != nil {
-			return 0, fmt.Errorf("value is not an integer or out of range")
-		}
-	}
-	if err := checkIntegerOverflow(currentValue, 1); err != nil {
-		return 0, err
-	}
-	currentValue++
-	s.data[key] = strconv.FormatInt(currentValue, 10)
-
-	return currentValue, nil
+	return s.IncrBy(key, 1)
 }
 
 func (s *Store) IncrBy(key string, increment int64) (int64, error) {
