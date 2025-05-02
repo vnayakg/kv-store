@@ -56,3 +56,30 @@ func TestStoreGet_NotFound(t *testing.T) {
 		t.Errorf("Get(%q) succeeded, expected key not to exist", key)
 	}
 }
+
+func TestDel(t *testing.T) {
+	store := CreateNewStore()
+	key := "name"
+	store.Set(key, "superman")
+
+	result := store.Del(key)
+
+	_, ok := store.Get(key)
+	if result != 1 {
+		t.Errorf("Del(%q) = %q, expected 1", key, result)
+	}
+	if ok {
+		t.Errorf("expected: %q should be deleted, got: it is still present", key)
+	}
+}
+
+func TestDel_ForNonExistentKey(t *testing.T) {
+	store := CreateNewStore()
+	key := "surname"
+
+	result := store.Del(key)
+
+	if result != 0 {
+		t.Errorf("Del(%q) = %q, expected 0", key, result)
+	}
+}

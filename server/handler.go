@@ -2,6 +2,7 @@ package server
 
 import (
 	"bufio"
+	"fmt"
 	"kv-store/parser"
 	"kv-store/store"
 	"log"
@@ -46,6 +47,14 @@ func handleConnection(conn net.Conn, store *store.Store) {
 				writeResponse(writer, "nil")
 			}
 			writeResponse(writer, value)
+
+		case "DEL":
+			if len(args) != 1 {
+				writeResponse(writer, "wrong number of arguments for DEL command")
+				continue
+			}
+			result := store.Del(args[0])
+			writeResponse(writer, fmt.Sprint(result))
 
 		default:
 			writeResponse(writer, "command not supported")

@@ -111,6 +111,25 @@ func TestHandleConnection(t *testing.T) {
 				"ERR syntax, mismatched quotes\n",
 			},
 		},
+		{
+			name: "Should Delete key",
+			commands: []string{
+				`DEL wizard`,
+			},
+			wantResponses: []string{
+				"1\n",
+			},
+			storeSetup: func(s *store.Store) { s.Set("wizard", "gandalf the white") },
+		},
+		{
+			name: "Return 0 for deleting non-existent key",
+			commands: []string{
+				`DEL this-is-random-key`,
+			},
+			wantResponses: []string{
+				"0\n",
+			},
+		},
 	}
 
 	for _, tc := range testCases {
