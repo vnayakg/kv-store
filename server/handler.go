@@ -155,7 +155,8 @@ func executeCommand(store *store.Store, command string, args []string) (any, err
 	case "INCRBY":
 		increment, _ := strconv.ParseInt(args[1], 10, 64)
 		return store.IncrBy(args[0], increment)
-
+	case "COMPACT":
+		return store.Compact(), nil
 	default:
 		return nil, ErrUnknownCommand(command)
 	}
@@ -197,7 +198,11 @@ func validateCommand(command string, args []string) error {
 			return ErrNotInteger
 		}
 		return nil
-
+	case "COMPACT":
+		if len(args) != 0 {
+			return ErrWrongArguments("COMPACT")
+		}
+		return nil
 	default:
 		return ErrUnknownCommand(command)
 	}

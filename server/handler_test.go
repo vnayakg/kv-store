@@ -125,9 +125,11 @@ func TestHandleConnection(t *testing.T) {
 			name: "Return 0 for deleting non-existent key",
 			commands: []string{
 				`DEL this-is-random-key`,
+				`DEL a b`,
 			},
 			wantResponses: []string{
 				"0\n",
+				"wrong number of arguments for DEL command\n",
 			},
 		},
 		{
@@ -271,6 +273,26 @@ func TestHandleConnection(t *testing.T) {
 				"QUEUED\n",
 				"QUEUED\n",
 				"OK\n",
+			},
+		},
+		{
+			name: "COMPACT",
+			commands: []string{
+				"COMPACT",
+				"COMPACT hello",
+			},
+			wantResponses: []string{
+				"\n",
+				"wrong number of arguments for COMPACT command\n",
+			},
+		},
+		{
+			name: "Unknown command",
+			commands: []string{
+				"UNKNOWN",
+			},
+			wantResponses: []string{
+				"err unknown command: UNKNOWN\n",
 			},
 		},
 	}

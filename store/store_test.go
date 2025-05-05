@@ -4,6 +4,7 @@ import (
 	"math"
 	"reflect"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -409,5 +410,64 @@ func TestInTransaction(t *testing.T) {
 
 	if result != true {
 		t.Errorf("expected: %v, got: %v", true, false)
+	}
+}
+
+func TestCompact_EmptyStore(t *testing.T) {
+	s := CreateNewStore()
+
+	output := s.Compact()
+	if output != "" {
+		t.Errorf("Expected empty string for empty store, got: %q", output)
+	}
+}
+
+func TestCompact_WithMultipleKeys(t *testing.T) {
+	s := CreateNewStore()
+	s.Set("counter", "13")
+	s.Incr("counter")
+	s.Set("foo", "bar")
+
+	output := s.Compact()
+
+	expectedLines := []string{
+		"SET counter 14",
+		"SET foo bar",
+	}
+	for _, line := range expectedLines {
+		if !strings.Contains(output, line) {
+			t.Errorf("Expected line %q in output, but not found. Got:\n%s", line, output)
+		}
+	}
+}
+
+func TestCompact_AfterDelete(t *testing.T) {
+	s := CreateNewStore()
+	s.Set("key1", "val1")
+	s.Set("key2", "val2")
+	s.Del("key1")
+
+	output := s.Compact()
+
+	if strings.Contains(output, "key1") {
+		t.Errorf("Expected key1 to be deleted, but found in output: %q", output)
+	}
+	if !strings.Contains(output, "SET key2 val2") {
+		t.Errorf("Expected remaining key2 in output, got: %q", output)
+	}
+}
+
+func TestCompact_HandlesOverwrites(t *testing.T) {
+	s := CreateNewStore()
+	s.Set("x", "1")
+	s.Set("x", "2")
+
+	output := s.Compact()
+
+	if !strings.Contains(output, "SET x 2") {
+		t.Errorf("Expected latest value of x to be 2, got: %q", output)
+	}
+	if strings.Contains(output, "SET x 1") {
+		t.Errorf("Should not contain old value of x: %q", output)
 	}
 }

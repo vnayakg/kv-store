@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
 	"sync"
 )
 
@@ -88,6 +89,17 @@ func (s *Store) IncrBy(key string, increment int64) (int64, error) {
 	s.data[key] = strconv.FormatInt(currentValue, 10)
 
 	return currentValue, nil
+}
+
+func (s *Store) Compact() string {
+	s.dataMutex.RLock()
+	defer s.dataMutex.RUnlock()
+
+	var result []string
+	for k, v := range s.data {
+		result = append(result, fmt.Sprintf("SET %s %s", k, v))
+	}
+	return strings.Join(result, "\n")
 }
 
 func checkIntegerOverflow(currentValue, increment int64) error {
@@ -211,6 +223,8 @@ func (s *Store) ExecuteTransaction(transactionId string) ([]string, error) {
 				return nil, err
 			}
 			result = strconv.FormatInt(int64(intResult), 10)
+		case "COMPACT":
+			result = s.Compact()
 
 		default:
 			s.rollbackSelective(transactionId, transaction.originalValues)
