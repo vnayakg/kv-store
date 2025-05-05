@@ -220,8 +220,8 @@ func TestIncrBy_ForOverflow(t *testing.T) {
 
 func TestStartTransaction_NoOnGoingTransaction(t *testing.T) {
 	store := CreateNewStore()
-
-	err := store.StartTransaction()
+	transactionId := "1"
+	err := store.StartTransaction(transactionId)
 
 	if err != nil {
 		t.Errorf("expected: should start transaction, got: %v", err)
@@ -230,9 +230,10 @@ func TestStartTransaction_NoOnGoingTransaction(t *testing.T) {
 
 func TestStartTransaction_OnGoingTransactionPresent(t *testing.T) {
 	store := CreateNewStore()
-	store.transaction = &Transaction{}
+	transactionId := "1"
+	store.transactions[transactionId] = &Transaction{}
 
-	err := store.StartTransaction()
+	err := store.StartTransaction(transactionId)
 
 	expectedError := fmt.Errorf("transaction already in progress")
 	if err.Error() != expectedError.Error() {
@@ -242,28 +243,30 @@ func TestStartTransaction_OnGoingTransactionPresent(t *testing.T) {
 
 func TestQueueCommand_OnGoingTransactionPresent(t *testing.T) {
 	store := CreateNewStore()
-	store.transaction = &Transaction{}
+	transactionId := "1"
+	store.transactions[transactionId] = &Transaction{}
 	commandName := "SET"
 	args := []string{"a", "2"}
 
-	err := store.QueueCommand(commandName, args)
+	err := store.QueueCommand(transactionId, commandName, args)
 
 	if err != nil {
 		t.Errorf("expected: should queue command, got: %v", err)
 	}
 	expectedCommand := Command{commandName, args}
-	if store.transaction.commands[0].name != expectedCommand.name &&
-		!reflect.DeepEqual(store.transaction.commands[0].args, expectedCommand.args) {
-		t.Errorf("expected: %v, got: %v", expectedCommand, store.transaction.commands[0])
+	if store.transactions[transactionId].commands[0].name != expectedCommand.name &&
+		!reflect.DeepEqual(store.transactions[transactionId].commands[0].args, expectedCommand.args) {
+		t.Errorf("expected: %v, got: %v", expectedCommand, store.transactions[transactionId].commands[0])
 	}
 }
 
 func TestQueueCommand_NoOnGoingTransactionPresent(t *testing.T) {
 	store := CreateNewStore()
+	transactionId := "1"
 	commandName := "SET"
 	args := []string{"a", "2"}
 
-	err := store.QueueCommand(commandName, args)
+	err := store.QueueCommand(transactionId, commandName, args)
 
 	expectedError := fmt.Errorf("no transaction in progress")
 	if err.Error() != expectedError.Error() {
@@ -273,22 +276,24 @@ func TestQueueCommand_NoOnGoingTransactionPresent(t *testing.T) {
 
 func TestDiscardTransaction_OnGoingTransactionPresent(t *testing.T) {
 	store := CreateNewStore()
-	store.transaction = &Transaction{}
+	transactionId := "1"
+	store.transactions[transactionId] = &Transaction{}
 
-	err := store.DiscardTransaction()
+	err := store.DiscardTransaction(transactionId)
 
 	if err != nil {
 		t.Errorf("expected: should discard transaction, got: %v", err)
 	}
-	if store.transaction != nil {
-		t.Errorf("expected: %v, got %v", nil, store.transaction)
+	if store.transactions[transactionId] != nil {
+		t.Errorf("expected: %v, got %v", nil, store.transactions[transactionId])
 	}
 }
 
 func TestDiscardTransaction_NoOnGoingTransactionPresent(t *testing.T) {
 	store := CreateNewStore()
+	transactionId := "1"
 
-	err := store.DiscardTransaction()
+	err := store.DiscardTransaction(transactionId)
 
 	expectedError := fmt.Errorf("no transaction in progress")
 	if err.Error() != expectedError.Error() {
@@ -298,7 +303,8 @@ func TestDiscardTransaction_NoOnGoingTransactionPresent(t *testing.T) {
 
 func TestExecuteTransaction_OnGoingTransactionPresent(t *testing.T) {
 	store := CreateNewStore()
-	store.transaction = &Transaction{
+	transactionId := "1"
+	store.transactions[transactionId] = &Transaction{
 		commands: []Command{
 			{name: "GET", args: []string{"a"}},
 			{name: "SET", args: []string{"a", "1"}},
@@ -310,7 +316,7 @@ func TestExecuteTransaction_OnGoingTransactionPresent(t *testing.T) {
 		originalValues: make(map[string]*string),
 	}
 
-	result, err := store.ExecuteTransaction()
+	result, err := store.ExecuteTransaction(transactionId)
 
 	expectedResult := []string{"nil", "OK", "1", "1", "1", "10"}
 	if err != nil {
@@ -323,8 +329,9 @@ func TestExecuteTransaction_OnGoingTransactionPresent(t *testing.T) {
 
 func TestExecuteTransaction_NoOnGoingTransactionPresent(t *testing.T) {
 	store := CreateNewStore()
+	transactionId := "1"
 
-	_, err := store.ExecuteTransaction()
+	_, err := store.ExecuteTransaction(transactionId)
 
 	expectedError := fmt.Errorf("no transaction in progress")
 	if err.Error() != expectedError.Error() {
@@ -335,7 +342,8 @@ func TestExecuteTransaction_NoOnGoingTransactionPresent(t *testing.T) {
 func TestExecuteTransaction_ShouldRollbackOnError(t *testing.T) {
 	store := CreateNewStore()
 	store.Set("a", "1")
-	store.transaction = &Transaction{
+	transactionId := "1"
+	store.transactions[transactionId] = &Transaction{
 		commands: []Command{
 			{name: "GET", args: []string{"a"}},
 			{name: "INCR", args: []string{"a"}},
@@ -345,7 +353,7 @@ func TestExecuteTransaction_ShouldRollbackOnError(t *testing.T) {
 		originalValues: make(map[string]*string),
 	}
 
-	result, err := store.ExecuteTransaction()
+	result, err := store.ExecuteTransaction(transactionId)
 
 	if err == nil {
 		t.Errorf("expected: should execute transaction, got: %v", err)

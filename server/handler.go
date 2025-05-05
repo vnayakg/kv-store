@@ -12,7 +12,8 @@ import (
 )
 
 func handleConnection(conn net.Conn, store *store.Store) {
-	log.Printf("Accepted connection from %s", conn.RemoteAddr())
+	clientId := fmt.Sprintf("%s-%p", conn.RemoteAddr(), conn)
+	log.Printf("Accepted connection from %s (ID: %s)", conn.RemoteAddr(), clientId)
 
 	reader := bufio.NewReader(conn)
 	writer := bufio.NewWriter(conn)
@@ -31,24 +32,24 @@ func handleConnection(conn net.Conn, store *store.Store) {
 		}
 
 		if command == "MULTI" {
-			handleMulti(writer, store)
+			handleMulti(clientId, writer, store)
 			continue
 		} else if command == "EXEC" {
-			handleExec(writer, store)
+			handleExec(clientId, writer, store)
 			continue
 		} else if command == "DISCARD" {
-			handleDiscard(writer, store)
+			handleDiscard(clientId, writer, store)
 			continue
 		}
 
-		if store.InTransaction() {
+		if store.InTransaction(clientId) {
 			validationErr := validateCommand(command, args)
 			if validationErr != nil {
-				store.ReportTransactionError()
+				store.ReportTransactionError(clientId)
 				writeResponse(writer, validationErr.Error())
 				continue
 			}
-			err := store.QueueCommand(command, args)
+			err := store.QueueCommand(clientId, command, args)
 			if err != nil {
 				writeResponse(writer, err.Error())
 				continue
@@ -75,8 +76,8 @@ func writeResponse(writer *bufio.Writer, input string) {
 	writer.Flush()
 }
 
-func handleMulti(writer *bufio.Writer, store *store.Store) {
-	err := store.StartTransaction()
+func handleMulti(transactionId string, writer *bufio.Writer, store *store.Store) {
+	err := store.StartTransaction(transactionId)
 	if err != nil {
 		writeResponse(writer, err.Error())
 		return
@@ -84,13 +85,13 @@ func handleMulti(writer *bufio.Writer, store *store.Store) {
 	writeResponse(writer, "OK")
 }
 
-func handleExec(writer *bufio.Writer, store *store.Store) {
-	hasError := store.HasTransactionError()
+func handleExec(transactionId string, writer *bufio.Writer, store *store.Store) {
+	hasError := store.HasTransactionError(transactionId)
 	if hasError {
 		writeResponse(writer, "discarding transaction due to above errors")
 		return
 	}
-	results, err := store.ExecuteTransaction()
+	results, err := store.ExecuteTransaction(transactionId)
 	if err != nil {
 		writeResponse(writer, err.Error())
 		return
@@ -103,8 +104,8 @@ func handleExec(writer *bufio.Writer, store *store.Store) {
 	writeResponse(writer, strings.Join(formattedResults, "\n"))
 }
 
-func handleDiscard(writer *bufio.Writer, store *store.Store) {
-	err := store.DiscardTransaction()
+func handleDiscard(transactionId string, writer *bufio.Writer, store *store.Store) {
+	err := store.DiscardTransaction(transactionId)
 	if err != nil {
 		writeResponse(writer, err.Error())
 		return
@@ -112,7 +113,7 @@ func handleDiscard(writer *bufio.Writer, store *store.Store) {
 	writeResponse(writer, "OK")
 }
 
-func executeCommand(store *store.Store, command string, args []string) (interface{}, error) {
+func executeCommand(store *store.Store, command string, args []string) (any, error) {
 	err := validateCommand(command, args)
 	if err != nil {
 		return nil, err

@@ -4,11 +4,14 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"sync"
 )
 
 type Store struct {
-	data        map[string]string
-	transaction *Transaction
+	data             map[string]string
+	dataMutex        sync.RWMutex
+	transactions     map[string]*Transaction
+	transactionMutex sync.Mutex
 }
 
 type Transaction struct {
@@ -23,14 +26,20 @@ type Command struct {
 }
 
 func CreateNewStore() *Store {
-	return &Store{data: make(map[string]string)}
+	return &Store{
+		data:         make(map[string]string),
+		transactions: make(map[string]*Transaction)}
 }
 
 func (s *Store) Set(key, value string) {
+	s.dataMutex.Lock()
+	defer s.dataMutex.Unlock()
 	s.data[key] = value
 }
 
 func (s *Store) Get(key string) (string, bool) {
+	s.dataMutex.RLock()
+	defer s.dataMutex.RUnlock()
 	value, ok := s.data[key]
 	return value, ok
 }
@@ -49,6 +58,9 @@ func (s *Store) Incr(key string) (int64, error) {
 }
 
 func (s *Store) IncrBy(key string, increment int64) (int64, error) {
+	s.dataMutex.Lock()
+	defer s.dataMutex.Unlock()
+
 	value, ok := s.data[key]
 
 	var currentValue int64 = 0
@@ -79,26 +91,35 @@ func checkIntegerOverflow(currentValue, increment int64) error {
 	return nil
 }
 
-func (s *Store) StartTransaction() error {
-	if s.InTransaction() {
+func (s *Store) StartTransaction(transactionId string) error {
+	s.transactionMutex.Lock()
+	defer s.transactionMutex.Unlock()
+
+	if _, exists := s.transactions[transactionId]; exists {
 		return fmt.Errorf("transaction already in progress")
 	}
-	s.transaction = &Transaction{
+
+	s.transactions[transactionId] = &Transaction{
 		commands:       make([]Command, 0),
 		originalValues: make(map[string]*string),
 	}
 	return nil
 }
 
-func (s *Store) InTransaction() bool {
-	return s.transaction != nil
+func (s *Store) InTransaction(transactionId string) bool {
+	_, exists := s.transactions[transactionId]
+	return exists
 }
 
-func (s *Store) QueueCommand(name string, args []string) error {
-	if !s.InTransaction() {
+func (s *Store) QueueCommand(transactionId, name string, args []string) error {
+	s.transactionMutex.Lock()
+	defer s.transactionMutex.Unlock()
+
+	transaction, exists := s.transactions[transactionId]
+	if !exists {
 		return fmt.Errorf("no transaction in progress")
 	}
-	s.transaction.commands = append(s.transaction.commands,
+	transaction.commands = append(transaction.commands,
 		Command{
 			name: name,
 			args: args,
@@ -106,29 +127,39 @@ func (s *Store) QueueCommand(name string, args []string) error {
 	return nil
 }
 
-func (s *Store) DiscardTransaction() error {
-	if !s.InTransaction() {
+func (s *Store) DiscardTransaction(transactionId string) error {
+	s.transactionMutex.Lock()
+	defer s.transactionMutex.Unlock()
+
+	if _, exists := s.transactions[transactionId]; !exists {
 		return fmt.Errorf("no transaction in progress")
 	}
-	s.transaction = nil
+
+	delete(s.transactions, transactionId)
 	return nil
 }
 
-func (s *Store) ExecuteTransaction() ([]string, error) {
-	if !s.InTransaction() {
+func (s *Store) ExecuteTransaction(transactionId string) ([]string, error) {
+	s.transactionMutex.Lock()
+	transaction, exists := s.transactions[transactionId]
+	if !exists {
+		s.transactionMutex.Unlock()
 		return nil, fmt.Errorf("no transaction in progress")
 	}
 
-	results := make([]string, 0, len(s.transaction.commands))
-	transaction := s.transaction
+	commands := make([]Command, len(transaction.commands))
+	copy(commands, transaction.commands)
+	s.transactionMutex.Unlock()
 
-	for _, cmd := range s.transaction.commands {
+	results := make([]string, 0, len(commands))
+
+	for _, cmd := range commands {
 		var result string
 		var err error
 
 		switch cmd.name {
 		case "SET":
-			s.saveOriginalValue(cmd.args[0])
+			s.saveOriginalValue(transaction, cmd.args[0])
 			s.Set(cmd.args[0], cmd.args[1])
 			result = "OK"
 
@@ -141,16 +172,16 @@ func (s *Store) ExecuteTransaction() ([]string, error) {
 			}
 
 		case "DEL":
-			s.saveOriginalValue(cmd.args[0])
+			s.saveOriginalValue(transaction, cmd.args[0])
 			result = strconv.FormatInt(int64(s.Del(cmd.args[0])), 10)
 
 		case "INCR":
-			s.saveOriginalValue(cmd.args[0])
+			s.saveOriginalValue(transaction, cmd.args[0])
 
 			var intResult int64
 			intResult, err = s.Incr(cmd.args[0])
 			if err != nil {
-				s.rollbackSelective(transaction.originalValues)
+				s.rollbackSelective(transactionId, transaction.originalValues)
 				return nil, err
 			}
 			result = strconv.FormatInt(int64(intResult), 10)
@@ -159,44 +190,50 @@ func (s *Store) ExecuteTransaction() ([]string, error) {
 			var increment int64
 			increment, err = strconv.ParseInt(cmd.args[1], 10, 64)
 			if err != nil {
-				s.rollbackSelective(transaction.originalValues)
+				s.rollbackSelective(transactionId, transaction.originalValues)
 				return nil, fmt.Errorf("increment must be an integer")
 			}
 
-			s.saveOriginalValue(cmd.args[0])
+			s.saveOriginalValue(transaction, cmd.args[0])
 			var intResult int64
 			intResult, err = s.IncrBy(cmd.args[0], increment)
 			if err != nil {
-				s.rollbackSelective(transaction.originalValues)
+				s.rollbackSelective(transactionId, transaction.originalValues)
 				return nil, err
 			}
 			result = strconv.FormatInt(int64(intResult), 10)
 
 		default:
-			s.rollbackSelective(transaction.originalValues)
+			s.rollbackSelective(transactionId, transaction.originalValues)
 			return nil, fmt.Errorf("unknown command: %s", cmd.name)
 		}
 
 		results = append(results, result)
 	}
 
-	s.transaction = nil
+	s.transactions[transactionId] = nil
 	return results, nil
 }
 
-func (s *Store) saveOriginalValue(key string) {
-	if _, exists := s.transaction.originalValues[key]; !exists {
+func (s *Store) saveOriginalValue(transaction *Transaction, key string) {
+	if _, exists := transaction.originalValues[key]; !exists {
+		s.dataMutex.Lock()
 		value, exists := s.data[key]
+		s.dataMutex.Unlock()
+
 		if exists {
 			valueCopy := value
-			s.transaction.originalValues[key] = &valueCopy
+			transaction.originalValues[key] = &valueCopy
 		} else {
-			s.transaction.originalValues[key] = nil
+			transaction.originalValues[key] = nil
 		}
 	}
 }
 
-func (s *Store) rollbackSelective(originalValues map[string]*string) {
+func (s *Store) rollbackSelective(transactionId string, originalValues map[string]*string) {
+	s.dataMutex.Lock()
+	defer s.dataMutex.Unlock()
+
 	for key, originalValuePtr := range originalValues {
 		if originalValuePtr == nil {
 			delete(s.data, key)
@@ -205,13 +242,15 @@ func (s *Store) rollbackSelective(originalValues map[string]*string) {
 		}
 	}
 
-	s.transaction = nil
+	s.transactionMutex.Lock()
+	delete(s.transactions, transactionId)
+	s.transactionMutex.Unlock()
 }
 
-func (s *Store) ReportTransactionError() {
-	s.transaction.hasErrors = true
+func (s *Store) ReportTransactionError(transactionId string) {
+	s.transactions[transactionId].hasErrors = true
 }
 
-func (s *Store) HasTransactionError() bool {
-	return s.transaction.hasErrors
+func (s *Store) HasTransactionError(transactionId string) bool {
+	return s.transactions[transactionId].hasErrors
 }
