@@ -1,10 +1,12 @@
 package store
 
 import (
+	"fmt"
 	"math"
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -24,8 +26,8 @@ func TestSetGet(t *testing.T) {
 	value := "batman"
 	store := CreateNewStore()
 
-	store.Set(key, value)
-	retrievedValue, ok := store.Get(key)
+	store.Set(0, key, value)
+	retrievedValue, ok := store.Get(0, key)
 
 	if !ok {
 		t.Errorf("Get(%q) failed, expected key to exist", key)
@@ -41,9 +43,9 @@ func TestSetGet_OverwriteValue(t *testing.T) {
 	valueToOverwrite := "superman"
 	store := CreateNewStore()
 
-	store.Set(key, value)
-	store.Set(key, valueToOverwrite)
-	retrievedValue, ok := store.Get(key)
+	store.Set(0, key, value)
+	store.Set(0, key, valueToOverwrite)
+	retrievedValue, ok := store.Get(0, key)
 
 	if !ok {
 		t.Errorf("Get(%q) failed, expected key to exist", key)
@@ -57,7 +59,7 @@ func TestStoreGet_NotFound(t *testing.T) {
 	store := CreateNewStore()
 	key := "non-existent"
 
-	_, ok := store.Get(key)
+	_, ok := store.Get(0, key)
 	if ok {
 		t.Errorf("Get(%q) succeeded, expected key not to exist", key)
 	}
@@ -66,11 +68,11 @@ func TestStoreGet_NotFound(t *testing.T) {
 func TestDel(t *testing.T) {
 	store := CreateNewStore()
 	key := "name"
-	store.Set(key, "superman")
+	store.Set(0, key, "superman")
 
-	result := store.Del(key)
+	result := store.Del(0, key)
 
-	_, ok := store.Get(key)
+	_, ok := store.Get(0, key)
 	if result != 1 {
 		t.Errorf("Del(%q) = %q, expected 1", key, result)
 	}
@@ -83,7 +85,7 @@ func TestDel_ForNonExistentKey(t *testing.T) {
 	store := CreateNewStore()
 	key := "surname"
 
-	result := store.Del(key)
+	result := store.Del(0, key)
 
 	if result != 0 {
 		t.Errorf("Del(%q) = %q, expected 0", key, result)
@@ -94,9 +96,9 @@ func TestIncr_ForExistingKey(t *testing.T) {
 	store := CreateNewStore()
 	key := "counter"
 	value := "1"
-	store.Set(key, value)
+	store.Set(0, key, value)
 
-	updatedValue, err := store.Incr(key)
+	updatedValue, err := store.Incr(0, key)
 
 	if err != nil {
 		t.Errorf("expected to increment counter, got error: %v", err)
@@ -110,9 +112,9 @@ func TestIncr_ForExistingNonIntegerKey(t *testing.T) {
 	store := CreateNewStore()
 	key := "counter"
 	value := "abc"
-	store.Set(key, value)
+	store.Set(0, key, value)
 
-	updatedValue, err := store.Incr(key)
+	updatedValue, err := store.Incr(0, key)
 
 	expectedError := ErrNotInteger
 	if err.Error() != expectedError.Error() {
@@ -127,7 +129,7 @@ func TestIncr_ForNonExistingKey(t *testing.T) {
 	store := CreateNewStore()
 	key := "counter"
 
-	updatedValue, err := store.Incr(key)
+	updatedValue, err := store.Incr(0, key)
 
 	if err != nil {
 		t.Errorf("expected to increment counter, got error: %v", err)
@@ -141,9 +143,9 @@ func TestIncr_ForOverflow(t *testing.T) {
 	store := CreateNewStore()
 	key := "counter"
 	value := strconv.FormatInt(math.MaxInt64, 10)
-	store.Set(key, value)
+	store.Set(0, key, value)
 
-	updatedValue, err := store.Incr(key)
+	updatedValue, err := store.Incr(0, key)
 
 	expectedError := ErrIntOverflow
 	if err.Error() != expectedError.Error() {
@@ -158,9 +160,9 @@ func TestIncrBy_ForExistingKey(t *testing.T) {
 	store := CreateNewStore()
 	key := "counter"
 	value := "1"
-	store.Set(key, value)
+	store.Set(0, key, value)
 
-	updatedValue, err := store.IncrBy(key, 9)
+	updatedValue, err := store.IncrBy(0, key, 9)
 
 	if err != nil {
 		t.Errorf("expected to increment counter, got error: %v", err)
@@ -174,9 +176,9 @@ func TestIncrBy_ForExistingNonIntegerKey(t *testing.T) {
 	store := CreateNewStore()
 	key := "counter"
 	value := "abc"
-	store.Set(key, value)
+	store.Set(0, key, value)
 
-	updatedValue, err := store.IncrBy(key, 10)
+	updatedValue, err := store.IncrBy(0, key, 10)
 
 	expectedError := ErrNotInteger
 	if err.Error() != expectedError.Error() {
@@ -191,7 +193,7 @@ func TestIncrBy_ForNonExistingKey(t *testing.T) {
 	store := CreateNewStore()
 	key := "counter"
 
-	updatedValue, err := store.IncrBy(key, 10)
+	updatedValue, err := store.IncrBy(0, key, 10)
 
 	if err != nil {
 		t.Errorf("expected to increment counter, got error: %v", err)
@@ -205,9 +207,9 @@ func TestIncrBy_ForOverflow(t *testing.T) {
 	store := CreateNewStore()
 	key := "counter"
 	value := strconv.FormatInt(math.MinInt64, 10)
-	store.Set(key, value)
+	store.Set(0, key, value)
 
-	updatedValue, err := store.IncrBy(key, -10)
+	updatedValue, err := store.IncrBy(0, key, -10)
 
 	expectedError := ErrIntOverflow
 	if err.Error() != expectedError.Error() {
@@ -341,7 +343,7 @@ func TestExecuteTransaction_NoOnGoingTransactionPresent(t *testing.T) {
 
 func TestExecuteTransaction_ShouldRollbackOnError(t *testing.T) {
 	store := CreateNewStore()
-	store.Set("a", "1")
+	store.Set(0, "a", "1")
 	transactionId := "1"
 	store.transactions[transactionId] = &Transaction{
 		commands: []Command{
@@ -361,7 +363,7 @@ func TestExecuteTransaction_ShouldRollbackOnError(t *testing.T) {
 	if result != nil {
 		t.Errorf("expected: nil, got: %v", result)
 	}
-	value, _ := store.Get("a")
+	value, _ := store.Get(0, "a")
 	if value != "1" {
 		t.Errorf("expected: Get('a') = 1, got: %v", 1)
 	}
@@ -388,19 +390,6 @@ func TestExecuteTransaction_ShouldRollbackForUnknownCommand(t *testing.T) {
 	}
 }
 
-func TestReportTransactionError_HasTransactionError(t *testing.T) {
-	store := CreateNewStore()
-	transactionId := "1"
-	store.StartTransaction(transactionId)
-
-	store.ReportTransactionError(transactionId)
-	result := store.HasTransactionError(transactionId)
-
-	if result != true {
-		t.Errorf("expected: %v, got: %v", true, false)
-	}
-}
-
 func TestInTransaction(t *testing.T) {
 	store := CreateNewStore()
 	transactionId := "1"
@@ -416,7 +405,7 @@ func TestInTransaction(t *testing.T) {
 func TestCompact_EmptyStore(t *testing.T) {
 	s := CreateNewStore()
 
-	output := s.Compact()
+	output := s.Compact(0)
 	if output != "" {
 		t.Errorf("Expected empty string for empty store, got: %q", output)
 	}
@@ -424,11 +413,11 @@ func TestCompact_EmptyStore(t *testing.T) {
 
 func TestCompact_WithMultipleKeys(t *testing.T) {
 	s := CreateNewStore()
-	s.Set("counter", "13")
-	s.Incr("counter")
-	s.Set("foo", "bar")
+	s.Set(0, "counter", "13")
+	s.Incr(0, "counter")
+	s.Set(0, "foo", "bar")
 
-	output := s.Compact()
+	output := s.Compact(0)
 
 	expectedLines := []string{
 		"SET counter 14",
@@ -443,11 +432,11 @@ func TestCompact_WithMultipleKeys(t *testing.T) {
 
 func TestCompact_AfterDelete(t *testing.T) {
 	s := CreateNewStore()
-	s.Set("key1", "val1")
-	s.Set("key2", "val2")
-	s.Del("key1")
+	s.Set(0, "key1", "val1")
+	s.Set(0, "key2", "val2")
+	s.Del(0, "key1")
 
-	output := s.Compact()
+	output := s.Compact(0)
 
 	if strings.Contains(output, "key1") {
 		t.Errorf("Expected key1 to be deleted, but found in output: %q", output)
@@ -459,15 +448,121 @@ func TestCompact_AfterDelete(t *testing.T) {
 
 func TestCompact_HandlesOverwrites(t *testing.T) {
 	s := CreateNewStore()
-	s.Set("x", "1")
-	s.Set("x", "2")
+	s.Set(0, "x", "1")
+	s.Set(0, "x", "2")
 
-	output := s.Compact()
+	output := s.Compact(0)
 
 	if !strings.Contains(output, "SET x 2") {
 		t.Errorf("Expected latest value of x to be 2, got: %q", output)
 	}
 	if strings.Contains(output, "SET x 1") {
 		t.Errorf("Should not contain old value of x: %q", output)
+	}
+}
+
+func TestStore_SetClientDBIndex(t *testing.T) {
+	store := CreateNewStore()
+	clientId := "client1"
+
+	store.SetClientDBIndex(clientId, 5)
+	if dbIndex := store.GetClientDBIndex(clientId); dbIndex != 5 {
+		t.Errorf("Expected DB index 5, got %d", dbIndex)
+	}
+
+	store.SetClientDBIndex(clientId, 0)
+	if dbIndex := store.GetClientDBIndex(clientId); dbIndex != 0 {
+		t.Errorf("Expected DB index 0, got %d", dbIndex)
+	}
+
+	clientId2 := "client2"
+	if dbIndex := store.GetClientDBIndex(clientId2); dbIndex != 0 {
+		t.Errorf("Expected default DB index 0 for new client, got %d", dbIndex)
+	}
+}
+
+func TestStore_DatabaseIsolation(t *testing.T) {
+	store := CreateNewStore()
+	clientId := "client1"
+
+	store.SetClientDBIndex(clientId, 1)
+	store.Set(1, "key1", "value1")
+	if value, ok := store.Get(1, "key1"); !ok || value != "value1" {
+		t.Errorf("Expected key1=value1 in DB 1, got ok=%v, value=%s", ok, value)
+	}
+	if value, ok := store.Get(2, "key1"); ok {
+		t.Errorf("Expected key1 to be absent in DB 2, got value=%s", value)
+	}
+
+	store.SetClientDBIndex(clientId, 2)
+	store.Set(2, "key1", "value2")
+	if value, ok := store.Get(2, "key1"); !ok || value != "value2" {
+		t.Errorf("Expected key1=value2 in DB 2, got ok=%v, value=%s", ok, value)
+	}
+	if value, ok := store.Get(1, "key1"); !ok || value != "value1" {
+		t.Errorf("Expected key1=value1 in DB 1, got ok=%v, value=%s", ok, value)
+	}
+}
+
+func TestStore_TransactionOnSetDBIndex(t *testing.T) {
+	store := CreateNewStore()
+	clientId := "client1"
+
+	store.SetClientDBIndex(clientId, 1)
+	if err := store.StartTransaction(clientId); err != nil {
+		t.Fatalf("Failed to start transaction: %v", err)
+	}
+
+	if err := store.QueueCommand(clientId, "SET", []string{"key1", "value1"}); err != nil {
+		t.Fatalf("Failed to queue SET: %v", err)
+	}
+
+	results, err := store.ExecuteTransaction(clientId)
+	if err != nil {
+		t.Fatalf("Transaction execution failed: %v", err)
+	}
+	if len(results) != 1 || results[0] != "OK" {
+		t.Errorf("Expected results=[OK], got %v", results)
+	}
+
+	if value, ok := store.Get(1, "key1"); !ok || value != "value1" {
+		t.Errorf("Expected key1=value1 in DB 1, got ok=%v, value=%s", ok, value)
+	}
+
+	if value, ok := store.Get(0, "key1"); ok {
+		t.Errorf("Expected key1 to be absent in DB 0, got value=%s", value)
+	}
+}
+
+func TestStore_ConcurrentDBAccess(t *testing.T) {
+	store := CreateNewStore()
+	var wg sync.WaitGroup
+	numClients := 100
+
+	for i := range numClients {
+		wg.Add(1)
+		go func(clientNum, dbIndex int) {
+			defer wg.Done()
+			clientId := fmt.Sprintf("client%d", clientNum)
+			store.SetClientDBIndex(clientId, dbIndex)
+			key := fmt.Sprintf("key%d", clientNum)
+			value := fmt.Sprintf("value%d", clientNum)
+
+			store.Set(dbIndex, key, value)
+			if v, ok := store.Get(dbIndex, key); !ok || v != value {
+				t.Errorf("Client %d: Expected %s=%s in DB %d, got ok=%v, value=%s", clientNum, key, value, dbIndex, ok, v)
+			}
+		}(i, i%defaultNumDatabases)
+	}
+
+	wg.Wait()
+
+	for i := range numClients {
+		dbIndex := i % defaultNumDatabases
+		key := fmt.Sprintf("key%d", i)
+		value := fmt.Sprintf("value%d", i)
+		if v, ok := store.Get(dbIndex, key); !ok || v != value {
+			t.Errorf("Verification: Expected %s=%s in DB %d, got ok=%v, value=%s", key, value, dbIndex, ok, v)
+		}
 	}
 }

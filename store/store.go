@@ -15,19 +15,26 @@ var (
 	ErrTransactionInProgress   = errors.New("err transaction already in progress")
 	ErrNotInteger              = errors.New("err value is not an integer or out of range")
 	ErrUnknownCommand          = func(cmdName string) error { return fmt.Errorf("err unknown command: %s", cmdName) }
+	ErrSelectInMulti           = errors.New("err SELECT command cannot be used in a transaction")
+	ErrSelectInTransaction     = errors.New("err SELECT is not allowed in transactions")
 )
 
+const defaultNumDatabases = 16
+
 type Store struct {
-	data             map[string]string
+	data             []map[string]string
 	dataMutex        sync.RWMutex
 	transactions     map[string]*Transaction
 	transactionMutex sync.Mutex
+	clientDBIndices  map[string]int
+	clientMutex      sync.RWMutex
 }
 
 type Transaction struct {
 	commands       []Command
 	originalValues map[string]*string
 	hasErrors      bool
+	dbIndex        int
 }
 
 type Command struct {
@@ -36,42 +43,73 @@ type Command struct {
 }
 
 func CreateNewStore() *Store {
+	data := make([]map[string]string, defaultNumDatabases)
+	for i := 0; i < defaultNumDatabases; i++ {
+		data[i] = make(map[string]string)
+	}
 	return &Store{
-		data:         make(map[string]string),
-		transactions: make(map[string]*Transaction)}
+		data:            data,
+		transactions:    make(map[string]*Transaction),
+		clientDBIndices: make(map[string]int),
+	}
+}
+func (s *Store) NumDatabases() int {
+	return defaultNumDatabases
 }
 
-func (s *Store) Set(key, value string) {
+func (s *Store) SetClientDBIndex(clientId string, dbIndex int) {
+	s.clientMutex.Lock()
+	defer s.clientMutex.Unlock()
+	s.clientDBIndices[clientId] = dbIndex
+}
+
+func (s *Store) GetClientDBIndex(clientId string) int {
+	s.clientMutex.RLock()
+	defer s.clientMutex.RUnlock()
+	dbIndex, exists := s.clientDBIndices[clientId]
+	if !exists {
+		return 0
+	}
+	return dbIndex
+}
+
+func (s *Store) RemoveClient(clientId string) {
+	s.clientMutex.Lock()
+	defer s.clientMutex.Unlock()
+	delete(s.clientDBIndices, clientId)
+}
+
+func (s *Store) Set(dbIndex int, key, value string) {
 	s.dataMutex.Lock()
 	defer s.dataMutex.Unlock()
-	s.data[key] = value
+	s.data[dbIndex][key] = value
 }
 
-func (s *Store) Get(key string) (string, bool) {
+func (s *Store) Get(dbIndex int, key string) (string, bool) {
 	s.dataMutex.RLock()
 	defer s.dataMutex.RUnlock()
-	value, ok := s.data[key]
+	value, ok := s.data[dbIndex][key]
 	return value, ok
 }
 
-func (s *Store) Del(key string) int {
-	_, ok := s.data[key]
+func (s *Store) Del(dbIndex int, key string) int {
+	_, ok := s.data[dbIndex][key]
 	if !ok {
 		return 0
 	}
-	delete(s.data, key)
+	delete(s.data[dbIndex], key)
 	return 1
 }
 
-func (s *Store) Incr(key string) (int64, error) {
-	return s.IncrBy(key, 1)
+func (s *Store) Incr(dbIndex int, key string) (int64, error) {
+	return s.IncrBy(dbIndex, key, 1)
 }
 
-func (s *Store) IncrBy(key string, increment int64) (int64, error) {
+func (s *Store) IncrBy(dbIndex int, key string, increment int64) (int64, error) {
 	s.dataMutex.Lock()
 	defer s.dataMutex.Unlock()
 
-	value, ok := s.data[key]
+	value, ok := s.data[dbIndex][key]
 
 	var currentValue int64 = 0
 	var err error
@@ -86,17 +124,17 @@ func (s *Store) IncrBy(key string, increment int64) (int64, error) {
 		return 0, err
 	}
 	currentValue += increment
-	s.data[key] = strconv.FormatInt(currentValue, 10)
+	s.data[dbIndex][key] = strconv.FormatInt(currentValue, 10)
 
 	return currentValue, nil
 }
 
-func (s *Store) Compact() string {
+func (s *Store) Compact(dbIndex int) string {
 	s.dataMutex.RLock()
 	defer s.dataMutex.RUnlock()
 
 	var result []string
-	for k, v := range s.data {
+	for k, v := range s.data[dbIndex] {
 		result = append(result, fmt.Sprintf("SET %s %s", k, v))
 	}
 	return strings.Join(result, "\n")
@@ -123,6 +161,7 @@ func (s *Store) StartTransaction(transactionId string) error {
 	s.transactions[transactionId] = &Transaction{
 		commands:       make([]Command, 0),
 		originalValues: make(map[string]*string),
+		dbIndex:        s.GetClientDBIndex(transactionId),
 	}
 	return nil
 }
@@ -167,9 +206,13 @@ func (s *Store) ExecuteTransaction(transactionId string) ([]string, error) {
 		s.transactionMutex.Unlock()
 		return nil, ErrNoTransactionInProgress
 	}
+	if transaction.hasErrors {
+		return nil, fmt.Errorf("err Transaction discarded because of previous errors")
+	}
 
 	commands := make([]Command, len(transaction.commands))
 	copy(commands, transaction.commands)
+	dbIndex := transaction.dbIndex
 	s.transactionMutex.Unlock()
 
 	results := make([]string, 0, len(commands))
@@ -181,11 +224,11 @@ func (s *Store) ExecuteTransaction(transactionId string) ([]string, error) {
 		switch cmd.name {
 		case "SET":
 			s.saveOriginalValue(transaction, cmd.args[0])
-			s.Set(cmd.args[0], cmd.args[1])
+			s.Set(dbIndex, cmd.args[0], cmd.args[1])
 			result = "OK"
 
 		case "GET":
-			val, ok := s.Get(cmd.args[0])
+			val, ok := s.Get(dbIndex, cmd.args[0])
 			if !ok {
 				result = "nil"
 			} else {
@@ -194,15 +237,15 @@ func (s *Store) ExecuteTransaction(transactionId string) ([]string, error) {
 
 		case "DEL":
 			s.saveOriginalValue(transaction, cmd.args[0])
-			result = strconv.FormatInt(int64(s.Del(cmd.args[0])), 10)
+			result = strconv.FormatInt(int64(s.Del(dbIndex, cmd.args[0])), 10)
 
 		case "INCR":
 			s.saveOriginalValue(transaction, cmd.args[0])
 
 			var intResult int64
-			intResult, err = s.Incr(cmd.args[0])
+			intResult, err = s.Incr(dbIndex, cmd.args[0])
 			if err != nil {
-				s.rollbackSelective(transactionId, transaction.originalValues)
+				s.rollbackSelective(transactionId, transaction.originalValues, dbIndex)
 				return nil, err
 			}
 			result = strconv.FormatInt(int64(intResult), 10)
@@ -211,23 +254,25 @@ func (s *Store) ExecuteTransaction(transactionId string) ([]string, error) {
 			var increment int64
 			increment, err = strconv.ParseInt(cmd.args[1], 10, 64)
 			if err != nil {
-				s.rollbackSelective(transactionId, transaction.originalValues)
+				s.rollbackSelective(transactionId, transaction.originalValues, dbIndex)
 				return nil, ErrNotInteger
 			}
 
 			s.saveOriginalValue(transaction, cmd.args[0])
 			var intResult int64
-			intResult, err = s.IncrBy(cmd.args[0], increment)
+			intResult, err = s.IncrBy(dbIndex, cmd.args[0], increment)
 			if err != nil {
-				s.rollbackSelective(transactionId, transaction.originalValues)
+				s.rollbackSelective(transactionId, transaction.originalValues, dbIndex)
 				return nil, err
 			}
 			result = strconv.FormatInt(int64(intResult), 10)
 		case "COMPACT":
-			result = s.Compact()
-
+			result = s.Compact(dbIndex)
+		case "SELECT":
+			s.rollbackSelective(transactionId, transaction.originalValues, dbIndex)
+			return nil, ErrSelectInTransaction
 		default:
-			s.rollbackSelective(transactionId, transaction.originalValues)
+			s.rollbackSelective(transactionId, transaction.originalValues, dbIndex)
 			return nil, ErrUnknownCommand(cmd.name)
 		}
 
@@ -241,7 +286,7 @@ func (s *Store) ExecuteTransaction(transactionId string) ([]string, error) {
 func (s *Store) saveOriginalValue(transaction *Transaction, key string) {
 	if _, exists := transaction.originalValues[key]; !exists {
 		s.dataMutex.Lock()
-		value, exists := s.data[key]
+		value, exists := s.data[transaction.dbIndex][key]
 		s.dataMutex.Unlock()
 
 		if exists {
@@ -253,15 +298,15 @@ func (s *Store) saveOriginalValue(transaction *Transaction, key string) {
 	}
 }
 
-func (s *Store) rollbackSelective(transactionId string, originalValues map[string]*string) {
+func (s *Store) rollbackSelective(transactionId string, originalValues map[string]*string, dbIndex int) {
 	s.dataMutex.Lock()
 	defer s.dataMutex.Unlock()
 
 	for key, originalValuePtr := range originalValues {
 		if originalValuePtr == nil {
-			delete(s.data, key)
+			delete(s.data[dbIndex], key)
 		} else {
-			s.data[key] = *originalValuePtr
+			s.data[dbIndex][key] = *originalValuePtr
 		}
 	}
 
@@ -271,9 +316,9 @@ func (s *Store) rollbackSelective(transactionId string, originalValues map[strin
 }
 
 func (s *Store) ReportTransactionError(transactionId string) {
-	s.transactions[transactionId].hasErrors = true
-}
-
-func (s *Store) HasTransactionError(transactionId string) bool {
-	return s.transactions[transactionId].hasErrors
+	s.transactionMutex.Lock()
+	defer s.transactionMutex.Unlock()
+	if transaction, exists := s.transactions[transactionId]; exists {
+		transaction.hasErrors = true
+	}
 }

@@ -119,7 +119,7 @@ func TestHandleConnection(t *testing.T) {
 			wantResponses: []string{
 				"1\n",
 			},
-			storeSetup: func(s *store.Store) { s.Set("wizard", "gandalf the white") },
+			storeSetup: func(s *store.Store) { s.Set(0, "wizard", "gandalf the white") },
 		},
 		{
 			name: "Return 0 for deleting non-existent key",
@@ -144,7 +144,7 @@ func TestHandleConnection(t *testing.T) {
 		{
 			name: "INCR existing key",
 			storeSetup: func(s *store.Store) {
-				s.Set("counter", "5")
+				s.Set(0, "counter", "5")
 			},
 			commands: []string{
 				"INCR counter",
@@ -158,7 +158,7 @@ func TestHandleConnection(t *testing.T) {
 		{
 			name: "INCR non-integer value",
 			storeSetup: func(s *store.Store) {
-				s.Set("key", "hello")
+				s.Set(0, "key", "hello")
 			},
 			commands: []string{
 				"INCR key",
@@ -190,7 +190,7 @@ func TestHandleConnection(t *testing.T) {
 		{
 			name: "INCRBY existing key positive",
 			storeSetup: func(s *store.Store) {
-				s.Set("visits", "100")
+				s.Set(0, "visits", "100")
 			},
 			commands: []string{
 				"INCRBY visits 25",
@@ -202,7 +202,7 @@ func TestHandleConnection(t *testing.T) {
 		{
 			name: "INCRBY existing key negative (decrement)",
 			storeSetup: func(s *store.Store) {
-				s.Set("visits", "50")
+				s.Set(0, "visits", "50")
 			},
 			commands: []string{
 				"INCRBY visits -10",
@@ -214,7 +214,7 @@ func TestHandleConnection(t *testing.T) {
 		{
 			name: "INCRBY non-integer value",
 			storeSetup: func(s *store.Store) {
-				s.Set("key", "world")
+				s.Set(0, "key", "world")
 			},
 			commands: []string{
 				"INCRBY key 5",
@@ -295,11 +295,44 @@ func TestHandleConnection(t *testing.T) {
 				"err unknown command: UNKNOWN\n",
 			},
 		},
+		{
+			name: "SELECT with invalid database index",
+			commands: []string{
+				"SELECT -1",
+				"SELECT 16",
+				"SELECT 17",
+				"SELECT",
+				"SELECT hi",
+			},
+			wantResponses: []string{
+				"err DB index is out of range\n",
+				"err DB index is out of range\n",
+				"err DB index is out of range\n",
+				"wrong number of arguments for SELECT command\n",
+				"err value is not an integer or out of range\n",
+			},
+		}, {
+			name: "SELECT success",
+			commands: []string{
+				"SELECT 1",
+				"SET key1 value1",
+				"SELECT 2",
+				"GET key1",
+			},
+			wantResponses: []string{
+				"OK\n",
+				"OK\n",
+				"OK\n",
+				"<nil>\n",
+			},
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+
 			store := store.CreateNewStore()
+
 			if tc.storeSetup != nil {
 				tc.storeSetup(store)
 			}

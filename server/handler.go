@@ -13,11 +13,12 @@ import (
 )
 
 var (
-	ErrNotInteger     = errors.New("err value is not an integer or out of range")
-	ErrWrongArguments = func(commandName string) error {
+	ErrNotInteger        = errors.New("err value is not an integer or out of range")
+	ErrWrongNumberOfArgs = func(commandName string) error {
 		return fmt.Errorf("wrong number of arguments for %v command", commandName)
 	}
-	ErrUnknownCommand = func(commandName string) error { return fmt.Errorf("err unknown command: %s", commandName) }
+	ErrUnknownCommand    = func(commandName string) error { return fmt.Errorf("err unknown command: %s", commandName) }
+	ErrDbIndexOutOfRange = errors.New("err DB index is out of range")
 )
 
 var (
@@ -32,6 +33,8 @@ func handleConnection(conn net.Conn, store *store.Store) {
 
 	reader := bufio.NewReader(conn)
 	writer := bufio.NewWriter(conn)
+
+	store.SetClientDBIndex(clientId, 0)
 
 	for {
 		line, err := reader.ReadString('\n')
@@ -73,7 +76,7 @@ func handleConnection(conn net.Conn, store *store.Store) {
 			continue
 		}
 
-		result, err := executeCommand(store, command, args)
+		result, err := executeCommand(store, clientId, command, args)
 		if err != nil {
 			writeResponse(writer, err.Error())
 			continue
@@ -101,11 +104,6 @@ func handleMulti(transactionId string, writer *bufio.Writer, store *store.Store)
 }
 
 func handleExec(transactionId string, writer *bufio.Writer, store *store.Store) {
-	hasError := store.HasTransactionError(transactionId)
-	if hasError {
-		writeResponse(writer, ResDiscardTransaction)
-		return
-	}
 	results, err := store.ExecuteTransaction(transactionId)
 	if err != nil {
 		writeResponse(writer, err.Error())
@@ -128,35 +126,45 @@ func handleDiscard(transactionId string, writer *bufio.Writer, store *store.Stor
 	writeResponse(writer, ResOk)
 }
 
-func executeCommand(store *store.Store, command string, args []string) (any, error) {
+func executeCommand(store *store.Store, clientId string, command string, args []string) (any, error) {
 	err := validateCommand(command, args)
 	if err != nil {
 		return nil, err
 	}
-
+	dbIndex := store.GetClientDBIndex(clientId)
 	switch command {
 	case "SET":
-		store.Set(args[0], args[1])
+		store.Set(dbIndex, args[0], args[1])
 		return ResOk, nil
 
 	case "GET":
-		value, ok := store.Get(args[0])
+		value, ok := store.Get(dbIndex, args[0])
 		if !ok {
 			return nil, nil
 		}
 		return value, nil
 
 	case "DEL":
-		return store.Del(args[0]), nil
+		return store.Del(dbIndex, args[0]), nil
 
 	case "INCR":
-		return store.Incr(args[0])
+		return store.Incr(dbIndex, args[0])
 
 	case "INCRBY":
 		increment, _ := strconv.ParseInt(args[1], 10, 64)
-		return store.IncrBy(args[0], increment)
+		return store.IncrBy(dbIndex, args[0], increment)
 	case "COMPACT":
-		return store.Compact(), nil
+		return store.Compact(dbIndex), nil
+	case "SELECT":
+		dbIndex, err := strconv.ParseInt(args[0], 10, 64)
+		if err != nil {
+			return nil, ErrNotInteger
+		}
+		if dbIndex < 0 || dbIndex >= int64(store.NumDatabases()) {
+			return nil, errors.New("err DB index is out of range")
+		}
+		store.SetClientDBIndex(clientId, int(dbIndex))
+		return ResOk, nil
 	default:
 		return nil, ErrUnknownCommand(command)
 	}
@@ -166,31 +174,31 @@ func validateCommand(command string, args []string) error {
 	switch command {
 	case "SET":
 		if len(args) != 2 {
-			return ErrWrongArguments("SET")
+			return ErrWrongNumberOfArgs("SET")
 		}
 		return nil
 
 	case "GET":
 		if len(args) != 1 {
-			return ErrWrongArguments("GET")
+			return ErrWrongNumberOfArgs("GET")
 		}
 		return nil
 
 	case "DEL":
 		if len(args) != 1 {
-			return ErrWrongArguments("DEL")
+			return ErrWrongNumberOfArgs("DEL")
 		}
 		return nil
 
 	case "INCR":
 		if len(args) != 1 {
-			return ErrWrongArguments("INCR")
+			return ErrWrongNumberOfArgs("INCR")
 		}
 		return nil
 
 	case "INCRBY":
 		if len(args) != 2 {
-			return ErrWrongArguments("INCRBY")
+			return ErrWrongNumberOfArgs("INCRBY")
 		}
 
 		_, err := strconv.ParseInt(args[1], 10, 64)
@@ -200,7 +208,16 @@ func validateCommand(command string, args []string) error {
 		return nil
 	case "COMPACT":
 		if len(args) != 0 {
-			return ErrWrongArguments("COMPACT")
+			return ErrWrongNumberOfArgs("COMPACT")
+		}
+		return nil
+	case "SELECT":
+		if len(args) != 1 {
+			return ErrWrongNumberOfArgs("SELECT")
+		}
+		_, err := strconv.ParseInt(args[0], 10, 64)
+		if err != nil {
+			return ErrNotInteger
 		}
 		return nil
 	default:
