@@ -1,10 +1,19 @@
 package store
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"strconv"
 	"sync"
+)
+
+var (
+	ErrIntOverflow             = errors.New("err increment or decrement would overflow")
+	ErrNoTransactionInProgress = errors.New("err no transaction in progress")
+	ErrTransactionInProgress   = errors.New("err transaction already in progress")
+	ErrNotInteger              = errors.New("err value is not an integer or out of range")
+	ErrUnknownCommand          = func(cmdName string) error { return fmt.Errorf("err unknown command: %s", cmdName) }
 )
 
 type Store struct {
@@ -69,7 +78,7 @@ func (s *Store) IncrBy(key string, increment int64) (int64, error) {
 	if ok {
 		currentValue, err = strconv.ParseInt(value, 10, 64)
 		if err != nil {
-			return 0, fmt.Errorf("value is not an integer or out of range")
+			return 0, ErrNotInteger
 		}
 	}
 	if err := checkIntegerOverflow(currentValue, increment); err != nil {
@@ -83,10 +92,10 @@ func (s *Store) IncrBy(key string, increment int64) (int64, error) {
 
 func checkIntegerOverflow(currentValue, increment int64) error {
 	if increment > 0 && currentValue > math.MaxInt64-increment {
-		return fmt.Errorf("increment or decrement would overflow")
+		return ErrIntOverflow
 	}
 	if increment < 0 && currentValue < math.MinInt64-increment {
-		return fmt.Errorf("increment or decrement would overflow")
+		return ErrIntOverflow
 	}
 	return nil
 }
@@ -96,7 +105,7 @@ func (s *Store) StartTransaction(transactionId string) error {
 	defer s.transactionMutex.Unlock()
 
 	if _, exists := s.transactions[transactionId]; exists {
-		return fmt.Errorf("transaction already in progress")
+		return ErrTransactionInProgress
 	}
 
 	s.transactions[transactionId] = &Transaction{
@@ -117,7 +126,7 @@ func (s *Store) QueueCommand(transactionId, name string, args []string) error {
 
 	transaction, exists := s.transactions[transactionId]
 	if !exists {
-		return fmt.Errorf("no transaction in progress")
+		return ErrNoTransactionInProgress
 	}
 	transaction.commands = append(transaction.commands,
 		Command{
@@ -132,7 +141,7 @@ func (s *Store) DiscardTransaction(transactionId string) error {
 	defer s.transactionMutex.Unlock()
 
 	if _, exists := s.transactions[transactionId]; !exists {
-		return fmt.Errorf("no transaction in progress")
+		return ErrNoTransactionInProgress
 	}
 
 	delete(s.transactions, transactionId)
@@ -144,7 +153,7 @@ func (s *Store) ExecuteTransaction(transactionId string) ([]string, error) {
 	transaction, exists := s.transactions[transactionId]
 	if !exists {
 		s.transactionMutex.Unlock()
-		return nil, fmt.Errorf("no transaction in progress")
+		return nil, ErrNoTransactionInProgress
 	}
 
 	commands := make([]Command, len(transaction.commands))
@@ -191,7 +200,7 @@ func (s *Store) ExecuteTransaction(transactionId string) ([]string, error) {
 			increment, err = strconv.ParseInt(cmd.args[1], 10, 64)
 			if err != nil {
 				s.rollbackSelective(transactionId, transaction.originalValues)
-				return nil, fmt.Errorf("increment must be an integer")
+				return nil, ErrNotInteger
 			}
 
 			s.saveOriginalValue(transaction, cmd.args[0])
@@ -205,7 +214,7 @@ func (s *Store) ExecuteTransaction(transactionId string) ([]string, error) {
 
 		default:
 			s.rollbackSelective(transactionId, transaction.originalValues)
-			return nil, fmt.Errorf("unknown command: %s", cmd.name)
+			return nil, ErrUnknownCommand(cmd.name)
 		}
 
 		results = append(results, result)

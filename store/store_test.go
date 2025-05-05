@@ -1,7 +1,6 @@
 package store
 
 import (
-	"fmt"
 	"math"
 	"reflect"
 	"strconv"
@@ -114,7 +113,7 @@ func TestIncr_ForExistingNonIntegerKey(t *testing.T) {
 
 	updatedValue, err := store.Incr(key)
 
-	expectedError := fmt.Errorf("value is not an integer or out of range")
+	expectedError := ErrNotInteger
 	if err.Error() != expectedError.Error() {
 		t.Errorf("expected: %q, got: %q", expectedError, err)
 	}
@@ -145,7 +144,7 @@ func TestIncr_ForOverflow(t *testing.T) {
 
 	updatedValue, err := store.Incr(key)
 
-	expectedError := fmt.Errorf("increment or decrement would overflow")
+	expectedError := ErrIntOverflow
 	if err.Error() != expectedError.Error() {
 		t.Errorf("expected: %q, got: %q", expectedError, err)
 	}
@@ -178,7 +177,7 @@ func TestIncrBy_ForExistingNonIntegerKey(t *testing.T) {
 
 	updatedValue, err := store.IncrBy(key, 10)
 
-	expectedError := fmt.Errorf("value is not an integer or out of range")
+	expectedError := ErrNotInteger
 	if err.Error() != expectedError.Error() {
 		t.Errorf("expected: %q, got: %q", expectedError, err)
 	}
@@ -209,7 +208,7 @@ func TestIncrBy_ForOverflow(t *testing.T) {
 
 	updatedValue, err := store.IncrBy(key, -10)
 
-	expectedError := fmt.Errorf("increment or decrement would overflow")
+	expectedError := ErrIntOverflow
 	if err.Error() != expectedError.Error() {
 		t.Errorf("expected: %q, got: %q", expectedError, err)
 	}
@@ -235,7 +234,7 @@ func TestStartTransaction_OnGoingTransactionPresent(t *testing.T) {
 
 	err := store.StartTransaction(transactionId)
 
-	expectedError := fmt.Errorf("transaction already in progress")
+	expectedError := ErrTransactionInProgress
 	if err.Error() != expectedError.Error() {
 		t.Errorf("expected: %v, got: %v", expectedError, err)
 	}
@@ -268,7 +267,7 @@ func TestQueueCommand_NoOnGoingTransactionPresent(t *testing.T) {
 
 	err := store.QueueCommand(transactionId, commandName, args)
 
-	expectedError := fmt.Errorf("no transaction in progress")
+	expectedError := ErrNoTransactionInProgress
 	if err.Error() != expectedError.Error() {
 		t.Errorf("expected: %v, got: %v", expectedError, err)
 	}
@@ -295,7 +294,7 @@ func TestDiscardTransaction_NoOnGoingTransactionPresent(t *testing.T) {
 
 	err := store.DiscardTransaction(transactionId)
 
-	expectedError := fmt.Errorf("no transaction in progress")
+	expectedError := ErrNoTransactionInProgress
 	if err.Error() != expectedError.Error() {
 		t.Errorf("expected: %v, got: %v", expectedError, err)
 	}
@@ -333,7 +332,7 @@ func TestExecuteTransaction_NoOnGoingTransactionPresent(t *testing.T) {
 
 	_, err := store.ExecuteTransaction(transactionId)
 
-	expectedError := fmt.Errorf("no transaction in progress")
+	expectedError := ErrNoTransactionInProgress
 	if err.Error() != expectedError.Error() {
 		t.Errorf("expected: %v, got: %v", expectedError, err)
 	}
@@ -364,5 +363,51 @@ func TestExecuteTransaction_ShouldRollbackOnError(t *testing.T) {
 	value, _ := store.Get("a")
 	if value != "1" {
 		t.Errorf("expected: Get('a') = 1, got: %v", 1)
+	}
+}
+
+func TestExecuteTransaction_ShouldRollbackForUnknownCommand(t *testing.T) {
+	store := CreateNewStore()
+	transactionId := "1"
+	unknownCommand := "UNKNOWN"
+	store.transactions[transactionId] = &Transaction{
+		commands: []Command{
+			{name: unknownCommand, args: []string{"a"}},
+		},
+		originalValues: make(map[string]*string),
+	}
+
+	result, err := store.ExecuteTransaction(transactionId)
+
+	if result != nil {
+		t.Errorf("expected: %v, got: %v", nil, result)
+	}
+	if err.Error() != ErrUnknownCommand(unknownCommand).Error() {
+		t.Errorf("expected: %v, got: %v", ErrUnknownCommand(unknownCommand), err)
+	}
+}
+
+func TestReportTransactionError_HasTransactionError(t *testing.T) {
+	store := CreateNewStore()
+	transactionId := "1"
+	store.StartTransaction(transactionId)
+
+	store.ReportTransactionError(transactionId)
+	result := store.HasTransactionError(transactionId)
+
+	if result != true {
+		t.Errorf("expected: %v, got: %v", true, false)
+	}
+}
+
+func TestInTransaction(t *testing.T) {
+	store := CreateNewStore()
+	transactionId := "1"
+	store.StartTransaction(transactionId)
+
+	result := store.InTransaction(transactionId)
+
+	if result != true {
+		t.Errorf("expected: %v, got: %v", true, false)
 	}
 }
