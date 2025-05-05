@@ -2,6 +2,7 @@ package server
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"kv-store/parser"
 	"kv-store/store"
@@ -9,6 +10,20 @@ import (
 	"net"
 	"strconv"
 	"strings"
+)
+
+var (
+	ErrNotInteger     = errors.New("err value is not an integer or out of range")
+	ErrWrongArguments = func(commandName string) error {
+		return fmt.Errorf("wrong number of arguments for %v command", commandName)
+	}
+	ErrUnknownCommand = func(commandName string) error { return fmt.Errorf("err unknown command: %s", commandName) }
+)
+
+var (
+	ResQueued             = "QUEUED"
+	ResOk                 = "OK"
+	ResDiscardTransaction = "discarding transaction due to above errors"
 )
 
 func handleConnection(conn net.Conn, store *store.Store) {
@@ -54,7 +69,7 @@ func handleConnection(conn net.Conn, store *store.Store) {
 				writeResponse(writer, err.Error())
 				continue
 			}
-			writeResponse(writer, "QUEUED")
+			writeResponse(writer, ResQueued)
 			continue
 		}
 
@@ -82,13 +97,13 @@ func handleMulti(transactionId string, writer *bufio.Writer, store *store.Store)
 		writeResponse(writer, err.Error())
 		return
 	}
-	writeResponse(writer, "OK")
+	writeResponse(writer, ResOk)
 }
 
 func handleExec(transactionId string, writer *bufio.Writer, store *store.Store) {
 	hasError := store.HasTransactionError(transactionId)
 	if hasError {
-		writeResponse(writer, "discarding transaction due to above errors")
+		writeResponse(writer, ResDiscardTransaction)
 		return
 	}
 	results, err := store.ExecuteTransaction(transactionId)
@@ -110,7 +125,7 @@ func handleDiscard(transactionId string, writer *bufio.Writer, store *store.Stor
 		writeResponse(writer, err.Error())
 		return
 	}
-	writeResponse(writer, "OK")
+	writeResponse(writer, ResOk)
 }
 
 func executeCommand(store *store.Store, command string, args []string) (any, error) {
@@ -122,7 +137,7 @@ func executeCommand(store *store.Store, command string, args []string) (any, err
 	switch command {
 	case "SET":
 		store.Set(args[0], args[1])
-		return "OK", nil
+		return ResOk, nil
 
 	case "GET":
 		value, ok := store.Get(args[0])
@@ -142,7 +157,7 @@ func executeCommand(store *store.Store, command string, args []string) (any, err
 		return store.IncrBy(args[0], increment)
 
 	default:
-		return nil, fmt.Errorf("ERR unknown command")
+		return nil, ErrUnknownCommand(command)
 	}
 }
 
@@ -150,40 +165,40 @@ func validateCommand(command string, args []string) error {
 	switch command {
 	case "SET":
 		if len(args) != 2 {
-			return fmt.Errorf("wrong number of arguments for SET command")
+			return ErrWrongArguments("SET")
 		}
 		return nil
 
 	case "GET":
 		if len(args) != 1 {
-			return fmt.Errorf("wrong number of arguments for GET command")
+			return ErrWrongArguments("GET")
 		}
 		return nil
 
 	case "DEL":
 		if len(args) != 1 {
-			return fmt.Errorf("wrong number of arguments for DEL command")
+			return ErrWrongArguments("DEL")
 		}
 		return nil
 
 	case "INCR":
 		if len(args) != 1 {
-			return fmt.Errorf("wrong number of arguments for INCR command")
+			return ErrWrongArguments("INCR")
 		}
 		return nil
 
 	case "INCRBY":
 		if len(args) != 2 {
-			return fmt.Errorf("wrong number of arguments for INCRBY command")
+			return ErrWrongArguments("INCRBY")
 		}
 
 		_, err := strconv.ParseInt(args[1], 10, 64)
 		if err != nil {
-			return fmt.Errorf("increment must be an integer")
+			return ErrNotInteger
 		}
 		return nil
 
 	default:
-		return fmt.Errorf("ERR unknown command")
+		return ErrUnknownCommand(command)
 	}
 }

@@ -68,7 +68,7 @@ func TestHandleConnection(t *testing.T) {
 				"FOOBAR arg1 arg2",
 			},
 			wantResponses: []string{
-				"ERR unknown command\n",
+				"err unknown command: FOOBAR\n",
 			},
 		},
 		{
@@ -162,7 +162,7 @@ func TestHandleConnection(t *testing.T) {
 				"INCR key",
 			},
 			wantResponses: []string{
-				"value is not an integer or out of range\n",
+				"err value is not an integer or out of range\n",
 			},
 		},
 		{
@@ -218,7 +218,7 @@ func TestHandleConnection(t *testing.T) {
 				"INCRBY key 5",
 			},
 			wantResponses: []string{
-				"value is not an integer or out of range\n",
+				"err value is not an integer or out of range\n",
 			},
 		},
 		{
@@ -227,7 +227,7 @@ func TestHandleConnection(t *testing.T) {
 				"INCRBY key abc",
 			},
 			wantResponses: []string{
-				"increment must be an integer\n",
+				"err value is not an integer or out of range\n",
 			},
 		},
 		{
