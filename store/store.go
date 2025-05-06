@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"math"
 	"strconv"
-	"strings"
 	"sync"
 )
 
@@ -19,11 +18,17 @@ var (
 	ErrSelectInTransaction     = errors.New("err SELECT is not allowed in transactions")
 )
 
-const defaultNumDatabases = 16
+type Storage interface {
+	Set(dbIndex int, key, value string)
+	Get(dbIndex int, key string) (string, bool)
+	Del(dbIndex int, key string) int
+	IncrBy(dbIndex int, key string, increment int64) (int64, error)
+	Compact(dbIndex int) string
+	NumDatabases() int
+}
 
 type Store struct {
-	data             []map[string]string
-	dataMutex        sync.RWMutex
+	storage          Storage
 	transactions     map[string]*Transaction
 	transactionMutex sync.Mutex
 	clientDBIndices  map[string]int
@@ -42,19 +47,15 @@ type Command struct {
 	args []string
 }
 
-func CreateNewStore() *Store {
-	data := make([]map[string]string, defaultNumDatabases)
-	for i := 0; i < defaultNumDatabases; i++ {
-		data[i] = make(map[string]string)
-	}
+func CreateNewStore(storage Storage) *Store {
 	return &Store{
-		data:            data,
+		storage:         storage,
 		transactions:    make(map[string]*Transaction),
 		clientDBIndices: make(map[string]int),
 	}
 }
 func (s *Store) NumDatabases() int {
-	return defaultNumDatabases
+	return s.storage.NumDatabases()
 }
 
 func (s *Store) SetClientDBIndex(clientId string, dbIndex int) {
@@ -80,64 +81,27 @@ func (s *Store) RemoveClient(clientId string) {
 }
 
 func (s *Store) Set(dbIndex int, key, value string) {
-	s.dataMutex.Lock()
-	defer s.dataMutex.Unlock()
-	s.data[dbIndex][key] = value
+	s.storage.Set(dbIndex, key, value)
 }
 
 func (s *Store) Get(dbIndex int, key string) (string, bool) {
-	s.dataMutex.RLock()
-	defer s.dataMutex.RUnlock()
-	value, ok := s.data[dbIndex][key]
-	return value, ok
+	return s.storage.Get(dbIndex, key)
 }
 
 func (s *Store) Del(dbIndex int, key string) int {
-	_, ok := s.data[dbIndex][key]
-	if !ok {
-		return 0
-	}
-	delete(s.data[dbIndex], key)
-	return 1
+	return s.storage.Del(dbIndex, key)
 }
 
 func (s *Store) Incr(dbIndex int, key string) (int64, error) {
-	return s.IncrBy(dbIndex, key, 1)
+	return s.storage.IncrBy(dbIndex, key, 1)
 }
 
 func (s *Store) IncrBy(dbIndex int, key string, increment int64) (int64, error) {
-	s.dataMutex.Lock()
-	defer s.dataMutex.Unlock()
-
-	value, ok := s.data[dbIndex][key]
-
-	var currentValue int64 = 0
-	var err error
-
-	if ok {
-		currentValue, err = strconv.ParseInt(value, 10, 64)
-		if err != nil {
-			return 0, ErrNotInteger
-		}
-	}
-	if err := checkIntegerOverflow(currentValue, increment); err != nil {
-		return 0, err
-	}
-	currentValue += increment
-	s.data[dbIndex][key] = strconv.FormatInt(currentValue, 10)
-
-	return currentValue, nil
+	return s.storage.IncrBy(dbIndex, key, increment)
 }
 
 func (s *Store) Compact(dbIndex int) string {
-	s.dataMutex.RLock()
-	defer s.dataMutex.RUnlock()
-
-	var result []string
-	for k, v := range s.data[dbIndex] {
-		result = append(result, fmt.Sprintf("SET %s %s", k, v))
-	}
-	return strings.Join(result, "\n")
+	return s.storage.Compact(dbIndex)
 }
 
 func checkIntegerOverflow(currentValue, increment int64) error {
@@ -285,10 +249,7 @@ func (s *Store) ExecuteTransaction(transactionId string) ([]string, error) {
 
 func (s *Store) saveOriginalValue(transaction *Transaction, key string) {
 	if _, exists := transaction.originalValues[key]; !exists {
-		s.dataMutex.Lock()
-		value, exists := s.data[transaction.dbIndex][key]
-		s.dataMutex.Unlock()
-
+		value, exists := s.storage.Get(transaction.dbIndex, key)
 		if exists {
 			valueCopy := value
 			transaction.originalValues[key] = &valueCopy
@@ -299,14 +260,11 @@ func (s *Store) saveOriginalValue(transaction *Transaction, key string) {
 }
 
 func (s *Store) rollbackSelective(transactionId string, originalValues map[string]*string, dbIndex int) {
-	s.dataMutex.Lock()
-	defer s.dataMutex.Unlock()
-
 	for key, originalValuePtr := range originalValues {
 		if originalValuePtr == nil {
-			delete(s.data[dbIndex], key)
+			s.Del(dbIndex, key)
 		} else {
-			s.data[dbIndex][key] = *originalValuePtr
+			s.storage.Set(dbIndex, key, *originalValuePtr)
 		}
 	}
 

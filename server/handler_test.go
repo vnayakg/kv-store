@@ -331,7 +331,7 @@ func TestHandleConnection(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 
-			store := store.CreateNewStore()
+			store := store.CreateNewStore(store.NewMemoryStorage(16))
 
 			if tc.storeSetup != nil {
 				tc.storeSetup(store)

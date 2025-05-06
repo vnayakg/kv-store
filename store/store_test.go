@@ -10,13 +10,21 @@ import (
 	"testing"
 )
 
+const defaultNumDatabases = 16
+
+func getInMemoryStore(t *testing.T) *Store {
+	t.Helper()
+	inMemoryStorage := NewMemoryStorage(defaultNumDatabases)
+	return CreateNewStore(inMemoryStorage)
+}
+
 func TestCreateNewStore(t *testing.T) {
-	store := CreateNewStore()
+	store := getInMemoryStore(t)
 
 	if store == nil {
 		t.Fatal("CreateNewStore() returned nil")
 	}
-	if store.data == nil {
+	if store.storage == nil {
 		t.Fatalf("CreateNewStore() did not initialize data map")
 	}
 }
@@ -24,7 +32,7 @@ func TestCreateNewStore(t *testing.T) {
 func TestSetGet(t *testing.T) {
 	key := "name"
 	value := "batman"
-	store := CreateNewStore()
+	store := getInMemoryStore(t)
 
 	store.Set(0, key, value)
 	retrievedValue, ok := store.Get(0, key)
@@ -41,7 +49,7 @@ func TestSetGet_OverwriteValue(t *testing.T) {
 	key := "name"
 	value := "batman"
 	valueToOverwrite := "superman"
-	store := CreateNewStore()
+	store := getInMemoryStore(t)
 
 	store.Set(0, key, value)
 	store.Set(0, key, valueToOverwrite)
@@ -56,7 +64,7 @@ func TestSetGet_OverwriteValue(t *testing.T) {
 }
 
 func TestStoreGet_NotFound(t *testing.T) {
-	store := CreateNewStore()
+	store := getInMemoryStore(t)
 	key := "non-existent"
 
 	_, ok := store.Get(0, key)
@@ -66,7 +74,7 @@ func TestStoreGet_NotFound(t *testing.T) {
 }
 
 func TestDel(t *testing.T) {
-	store := CreateNewStore()
+	store := getInMemoryStore(t)
 	key := "name"
 	store.Set(0, key, "superman")
 
@@ -82,7 +90,7 @@ func TestDel(t *testing.T) {
 }
 
 func TestDel_ForNonExistentKey(t *testing.T) {
-	store := CreateNewStore()
+	store := getInMemoryStore(t)
 	key := "surname"
 
 	result := store.Del(0, key)
@@ -93,7 +101,7 @@ func TestDel_ForNonExistentKey(t *testing.T) {
 }
 
 func TestIncr_ForExistingKey(t *testing.T) {
-	store := CreateNewStore()
+	store := getInMemoryStore(t)
 	key := "counter"
 	value := "1"
 	store.Set(0, key, value)
@@ -109,7 +117,7 @@ func TestIncr_ForExistingKey(t *testing.T) {
 }
 
 func TestIncr_ForExistingNonIntegerKey(t *testing.T) {
-	store := CreateNewStore()
+	store := getInMemoryStore(t)
 	key := "counter"
 	value := "abc"
 	store.Set(0, key, value)
@@ -126,7 +134,7 @@ func TestIncr_ForExistingNonIntegerKey(t *testing.T) {
 }
 
 func TestIncr_ForNonExistingKey(t *testing.T) {
-	store := CreateNewStore()
+	store := getInMemoryStore(t)
 	key := "counter"
 
 	updatedValue, err := store.Incr(0, key)
@@ -140,7 +148,7 @@ func TestIncr_ForNonExistingKey(t *testing.T) {
 }
 
 func TestIncr_ForOverflow(t *testing.T) {
-	store := CreateNewStore()
+	store := getInMemoryStore(t)
 	key := "counter"
 	value := strconv.FormatInt(math.MaxInt64, 10)
 	store.Set(0, key, value)
@@ -157,7 +165,7 @@ func TestIncr_ForOverflow(t *testing.T) {
 }
 
 func TestIncrBy_ForExistingKey(t *testing.T) {
-	store := CreateNewStore()
+	store := getInMemoryStore(t)
 	key := "counter"
 	value := "1"
 	store.Set(0, key, value)
@@ -173,7 +181,7 @@ func TestIncrBy_ForExistingKey(t *testing.T) {
 }
 
 func TestIncrBy_ForExistingNonIntegerKey(t *testing.T) {
-	store := CreateNewStore()
+	store := getInMemoryStore(t)
 	key := "counter"
 	value := "abc"
 	store.Set(0, key, value)
@@ -190,7 +198,7 @@ func TestIncrBy_ForExistingNonIntegerKey(t *testing.T) {
 }
 
 func TestIncrBy_ForNonExistingKey(t *testing.T) {
-	store := CreateNewStore()
+	store := getInMemoryStore(t)
 	key := "counter"
 
 	updatedValue, err := store.IncrBy(0, key, 10)
@@ -204,7 +212,7 @@ func TestIncrBy_ForNonExistingKey(t *testing.T) {
 }
 
 func TestIncrBy_ForOverflow(t *testing.T) {
-	store := CreateNewStore()
+	store := getInMemoryStore(t)
 	key := "counter"
 	value := strconv.FormatInt(math.MinInt64, 10)
 	store.Set(0, key, value)
@@ -221,7 +229,7 @@ func TestIncrBy_ForOverflow(t *testing.T) {
 }
 
 func TestStartTransaction_NoOnGoingTransaction(t *testing.T) {
-	store := CreateNewStore()
+	store := getInMemoryStore(t)
 	transactionId := "1"
 	err := store.StartTransaction(transactionId)
 
@@ -231,7 +239,7 @@ func TestStartTransaction_NoOnGoingTransaction(t *testing.T) {
 }
 
 func TestStartTransaction_OnGoingTransactionPresent(t *testing.T) {
-	store := CreateNewStore()
+	store := getInMemoryStore(t)
 	transactionId := "1"
 	store.transactions[transactionId] = &Transaction{}
 
@@ -244,7 +252,7 @@ func TestStartTransaction_OnGoingTransactionPresent(t *testing.T) {
 }
 
 func TestQueueCommand_OnGoingTransactionPresent(t *testing.T) {
-	store := CreateNewStore()
+	store := getInMemoryStore(t)
 	transactionId := "1"
 	store.transactions[transactionId] = &Transaction{}
 	commandName := "SET"
@@ -263,7 +271,7 @@ func TestQueueCommand_OnGoingTransactionPresent(t *testing.T) {
 }
 
 func TestQueueCommand_NoOnGoingTransactionPresent(t *testing.T) {
-	store := CreateNewStore()
+	store := getInMemoryStore(t)
 	transactionId := "1"
 	commandName := "SET"
 	args := []string{"a", "2"}
@@ -277,7 +285,7 @@ func TestQueueCommand_NoOnGoingTransactionPresent(t *testing.T) {
 }
 
 func TestDiscardTransaction_OnGoingTransactionPresent(t *testing.T) {
-	store := CreateNewStore()
+	store := getInMemoryStore(t)
 	transactionId := "1"
 	store.transactions[transactionId] = &Transaction{}
 
@@ -292,7 +300,7 @@ func TestDiscardTransaction_OnGoingTransactionPresent(t *testing.T) {
 }
 
 func TestDiscardTransaction_NoOnGoingTransactionPresent(t *testing.T) {
-	store := CreateNewStore()
+	store := getInMemoryStore(t)
 	transactionId := "1"
 
 	err := store.DiscardTransaction(transactionId)
@@ -304,7 +312,7 @@ func TestDiscardTransaction_NoOnGoingTransactionPresent(t *testing.T) {
 }
 
 func TestExecuteTransaction_OnGoingTransactionPresent(t *testing.T) {
-	store := CreateNewStore()
+	store := getInMemoryStore(t)
 	transactionId := "1"
 	store.transactions[transactionId] = &Transaction{
 		commands: []Command{
@@ -330,7 +338,7 @@ func TestExecuteTransaction_OnGoingTransactionPresent(t *testing.T) {
 }
 
 func TestExecuteTransaction_NoOnGoingTransactionPresent(t *testing.T) {
-	store := CreateNewStore()
+	store := getInMemoryStore(t)
 	transactionId := "1"
 
 	_, err := store.ExecuteTransaction(transactionId)
@@ -342,7 +350,7 @@ func TestExecuteTransaction_NoOnGoingTransactionPresent(t *testing.T) {
 }
 
 func TestExecuteTransaction_ShouldRollbackOnError(t *testing.T) {
-	store := CreateNewStore()
+	store := getInMemoryStore(t)
 	store.Set(0, "a", "1")
 	transactionId := "1"
 	store.transactions[transactionId] = &Transaction{
@@ -370,7 +378,7 @@ func TestExecuteTransaction_ShouldRollbackOnError(t *testing.T) {
 }
 
 func TestExecuteTransaction_ShouldRollbackForUnknownCommand(t *testing.T) {
-	store := CreateNewStore()
+	store := getInMemoryStore(t)
 	transactionId := "1"
 	unknownCommand := "UNKNOWN"
 	store.transactions[transactionId] = &Transaction{
@@ -391,7 +399,7 @@ func TestExecuteTransaction_ShouldRollbackForUnknownCommand(t *testing.T) {
 }
 
 func TestInTransaction(t *testing.T) {
-	store := CreateNewStore()
+	store := getInMemoryStore(t)
 	transactionId := "1"
 	store.StartTransaction(transactionId)
 
@@ -403,7 +411,7 @@ func TestInTransaction(t *testing.T) {
 }
 
 func TestCompact_EmptyStore(t *testing.T) {
-	s := CreateNewStore()
+	s := getInMemoryStore(t)
 
 	output := s.Compact(0)
 	if output != "" {
@@ -412,7 +420,7 @@ func TestCompact_EmptyStore(t *testing.T) {
 }
 
 func TestCompact_WithMultipleKeys(t *testing.T) {
-	s := CreateNewStore()
+	s := getInMemoryStore(t)
 	s.Set(0, "counter", "13")
 	s.Incr(0, "counter")
 	s.Set(0, "foo", "bar")
@@ -431,7 +439,7 @@ func TestCompact_WithMultipleKeys(t *testing.T) {
 }
 
 func TestCompact_AfterDelete(t *testing.T) {
-	s := CreateNewStore()
+	s := getInMemoryStore(t)
 	s.Set(0, "key1", "val1")
 	s.Set(0, "key2", "val2")
 	s.Del(0, "key1")
@@ -447,7 +455,7 @@ func TestCompact_AfterDelete(t *testing.T) {
 }
 
 func TestCompact_HandlesOverwrites(t *testing.T) {
-	s := CreateNewStore()
+	s := getInMemoryStore(t)
 	s.Set(0, "x", "1")
 	s.Set(0, "x", "2")
 
@@ -462,7 +470,7 @@ func TestCompact_HandlesOverwrites(t *testing.T) {
 }
 
 func TestStore_SetClientDBIndex(t *testing.T) {
-	store := CreateNewStore()
+	store := getInMemoryStore(t)
 	clientId := "client1"
 
 	store.SetClientDBIndex(clientId, 5)
@@ -482,7 +490,7 @@ func TestStore_SetClientDBIndex(t *testing.T) {
 }
 
 func TestStore_DatabaseIsolation(t *testing.T) {
-	store := CreateNewStore()
+	store := getInMemoryStore(t)
 	clientId := "client1"
 
 	store.SetClientDBIndex(clientId, 1)
@@ -505,7 +513,7 @@ func TestStore_DatabaseIsolation(t *testing.T) {
 }
 
 func TestStore_TransactionOnSetDBIndex(t *testing.T) {
-	store := CreateNewStore()
+	store := getInMemoryStore(t)
 	clientId := "client1"
 
 	store.SetClientDBIndex(clientId, 1)
@@ -535,7 +543,7 @@ func TestStore_TransactionOnSetDBIndex(t *testing.T) {
 }
 
 func TestStore_ConcurrentDBAccess(t *testing.T) {
-	store := CreateNewStore()
+	store := getInMemoryStore(t)
 	var wg sync.WaitGroup
 	numClients := 100
 
