@@ -54,7 +54,7 @@ func CreateNewStore(storage Storage) *Store {
 		clientDBIndices: make(map[string]int),
 	}
 }
-func (s *Store) NumDatabases() int {
+func (s *Store) GetDatabasesCount() int {
 	return s.storage.NumDatabases()
 }
 

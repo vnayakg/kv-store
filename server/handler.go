@@ -168,7 +168,7 @@ func executeCommand(store *store.Store, clientId string, command string, args []
 		if err != nil {
 			return nil, ErrNotInteger
 		}
-		if dbIndex < 0 || dbIndex >= int64(store.NumDatabases()) {
+		if dbIndex < 0 || dbIndex >= int64(store.GetDatabasesCount()) {
 			return nil, errors.New("err DB index is out of range")
 		}
 		store.SetClientDBIndex(clientId, int(dbIndex))
