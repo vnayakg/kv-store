@@ -22,7 +22,7 @@ func NewMemoryStorage(numDatabases int) *MemoryStorage {
 	}
 }
 
-func (ms *MemoryStorage) NumDatabases() int {
+func (ms *MemoryStorage) numDatabases() int {
 	return len(ms.data)
 }
 

@@ -24,7 +24,7 @@ type Storage interface {
 	Del(dbIndex int, key string) int
 	IncrBy(dbIndex int, key string, increment int64) (int64, error)
 	Compact(dbIndex int) string
-	NumDatabases() int
+	numDatabases() int
 }
 
 type Store struct {
@@ -54,8 +54,9 @@ func CreateNewStore(storage Storage) *Store {
 		clientDBIndices: make(map[string]int),
 	}
 }
+
 func (s *Store) GetDatabasesCount() int {
-	return s.storage.NumDatabases()
+	return s.storage.numDatabases()
 }
 
 func (s *Store) SetClientDBIndex(clientId string, dbIndex int) {
@@ -118,7 +119,7 @@ func (s *Store) StartTransaction(transactionId string) error {
 	s.transactionMutex.Lock()
 	defer s.transactionMutex.Unlock()
 
-	if _, exists := s.transactions[transactionId]; exists {
+	if s.InTransaction(transactionId) {
 		return ErrTransactionInProgress
 	}
 
@@ -155,7 +156,7 @@ func (s *Store) DiscardTransaction(transactionId string) error {
 	s.transactionMutex.Lock()
 	defer s.transactionMutex.Unlock()
 
-	if _, exists := s.transactions[transactionId]; !exists {
+	if !s.InTransaction(transactionId) {
 		return ErrNoTransactionInProgress
 	}
 
