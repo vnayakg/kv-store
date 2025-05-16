@@ -40,15 +40,16 @@ func handleConnection(conn net.Conn, store *store.Store) {
 		line, err := reader.ReadString('\n')
 		if err != nil {
 			if err.Error() == "EOF" {
-				log.Printf("Connection closed for client %s", conn.RemoteAddr())
+				log.Printf("Connection closed for client %s", clientId)
 
 				if store.InTransaction(clientId) {
 					store.DiscardTransaction(clientId)
-					log.Printf("Discarded transaction for client %s", conn.RemoteAddr())
+					log.Printf("Discarded transaction for client %s", clientId)
 				}
 				return
 			}
-			log.Printf("Error reading from %s: %v", conn.RemoteAddr(), err)
+			log.Printf("Error reading from %s: %v", clientId, err)
+			writeResponse(writer, "Error reading from STDIN")
 		}
 
 		command, args, parseErr := parser.ParseCommandLine(line)
