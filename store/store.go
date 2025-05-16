@@ -210,7 +210,7 @@ func (s *Store) ExecuteTransaction(transactionId string) ([]string, error) {
 			var intResult int64
 			intResult, err = s.Incr(dbIndex, cmd.args[0])
 			if err != nil {
-				s.rollbackSelective(transactionId, transaction.originalValues, dbIndex)
+				s.rollback(transactionId, transaction.originalValues, dbIndex)
 				return nil, err
 			}
 			result = strconv.FormatInt(int64(intResult), 10)
@@ -219,7 +219,7 @@ func (s *Store) ExecuteTransaction(transactionId string) ([]string, error) {
 			var increment int64
 			increment, err = strconv.ParseInt(cmd.args[1], 10, 64)
 			if err != nil {
-				s.rollbackSelective(transactionId, transaction.originalValues, dbIndex)
+				s.rollback(transactionId, transaction.originalValues, dbIndex)
 				return nil, ErrNotInteger
 			}
 
@@ -227,24 +227,24 @@ func (s *Store) ExecuteTransaction(transactionId string) ([]string, error) {
 			var intResult int64
 			intResult, err = s.IncrBy(dbIndex, cmd.args[0], increment)
 			if err != nil {
-				s.rollbackSelective(transactionId, transaction.originalValues, dbIndex)
+				s.rollback(transactionId, transaction.originalValues, dbIndex)
 				return nil, err
 			}
 			result = strconv.FormatInt(int64(intResult), 10)
 		case "COMPACT":
 			result = s.Compact(dbIndex)
 		case "SELECT":
-			s.rollbackSelective(transactionId, transaction.originalValues, dbIndex)
+			s.rollback(transactionId, transaction.originalValues, dbIndex)
 			return nil, ErrSelectInTransaction
 		default:
-			s.rollbackSelective(transactionId, transaction.originalValues, dbIndex)
+			s.rollback(transactionId, transaction.originalValues, dbIndex)
 			return nil, ErrUnknownCommand(cmd.name)
 		}
 
 		results = append(results, result)
 	}
 
-	s.transactions[transactionId] = nil
+	s.transactions[transactionId] = nil //remove the key after the transaction finishes
 	return results, nil
 }
 
@@ -260,7 +260,7 @@ func (s *Store) saveOriginalValue(transaction *Transaction, key string) {
 	}
 }
 
-func (s *Store) rollbackSelective(transactionId string, originalValues map[string]*string, dbIndex int) {
+func (s *Store) rollback(transactionId string, originalValues map[string]*string, dbIndex int) {
 	for key, originalValuePtr := range originalValues {
 		if originalValuePtr == nil {
 			s.Del(dbIndex, key)
