@@ -244,7 +244,7 @@ func (s *Store) ExecuteTransaction(transactionId string) ([]string, error) {
 		results = append(results, result)
 	}
 
-	s.transactions[transactionId] = nil //remove the key after the transaction finishes
+	delete(s.transactions, transactionId)
 	return results, nil
 }
 
