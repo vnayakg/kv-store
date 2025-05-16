@@ -29,20 +29,20 @@ type Storage interface {
 
 type Store struct {
 	storage          Storage
-	transactions     map[string]*Transaction
+	transactions     map[string]*transaction
 	transactionMutex sync.Mutex
 	clientDBIndices  map[string]int
 	clientMutex      sync.RWMutex
 }
 
-type Transaction struct {
-	commands       []Command
+type transaction struct {
+	commands       []command
 	originalValues map[string]*string
 	hasErrors      bool
 	dbIndex        int
 }
 
-type Command struct {
+type command struct {
 	name string
 	args []string
 }
@@ -50,7 +50,7 @@ type Command struct {
 func CreateNewStore(storage Storage) *Store {
 	return &Store{
 		storage:         storage,
-		transactions:    make(map[string]*Transaction),
+		transactions:    make(map[string]*transaction),
 		clientDBIndices: make(map[string]int),
 	}
 }
@@ -123,8 +123,8 @@ func (s *Store) StartTransaction(transactionId string) error {
 		return ErrTransactionInProgress
 	}
 
-	s.transactions[transactionId] = &Transaction{
-		commands:       make([]Command, 0),
+	s.transactions[transactionId] = &transaction{
+		commands:       make([]command, 0),
 		originalValues: make(map[string]*string),
 		dbIndex:        s.GetClientDBIndex(transactionId),
 	}
@@ -145,7 +145,7 @@ func (s *Store) QueueCommand(transactionId, name string, args []string) error {
 		return ErrNoTransactionInProgress
 	}
 	transaction.commands = append(transaction.commands,
-		Command{
+		command{
 			name: name,
 			args: args,
 		})
@@ -175,7 +175,7 @@ func (s *Store) ExecuteTransaction(transactionId string) ([]string, error) {
 		return nil, fmt.Errorf("err Transaction discarded because of previous errors")
 	}
 
-	commands := make([]Command, len(transaction.commands))
+	commands := make([]command, len(transaction.commands))
 	copy(commands, transaction.commands)
 	dbIndex := transaction.dbIndex
 	s.transactionMutex.Unlock()
@@ -248,7 +248,7 @@ func (s *Store) ExecuteTransaction(transactionId string) ([]string, error) {
 	return results, nil
 }
 
-func (s *Store) saveOriginalValue(transaction *Transaction, key string) {
+func (s *Store) saveOriginalValue(transaction *transaction, key string) {
 	if _, exists := transaction.originalValues[key]; !exists {
 		value, exists := s.storage.Get(transaction.dbIndex, key)
 		if exists {

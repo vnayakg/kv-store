@@ -241,7 +241,7 @@ func TestStartTransaction_NoOnGoingTransaction(t *testing.T) {
 func TestStartTransaction_OnGoingTransactionPresent(t *testing.T) {
 	store := getInMemoryStore(t)
 	transactionId := "1"
-	store.transactions[transactionId] = &Transaction{}
+	store.transactions[transactionId] = &transaction{}
 
 	err := store.StartTransaction(transactionId)
 
@@ -254,7 +254,7 @@ func TestStartTransaction_OnGoingTransactionPresent(t *testing.T) {
 func TestQueueCommand_OnGoingTransactionPresent(t *testing.T) {
 	store := getInMemoryStore(t)
 	transactionId := "1"
-	store.transactions[transactionId] = &Transaction{}
+	store.transactions[transactionId] = &transaction{}
 	commandName := "SET"
 	args := []string{"a", "2"}
 
@@ -263,7 +263,7 @@ func TestQueueCommand_OnGoingTransactionPresent(t *testing.T) {
 	if err != nil {
 		t.Errorf("expected: should queue command, got: %v", err)
 	}
-	expectedCommand := Command{commandName, args}
+	expectedCommand := command{commandName, args}
 	if store.transactions[transactionId].commands[0].name != expectedCommand.name &&
 		!reflect.DeepEqual(store.transactions[transactionId].commands[0].args, expectedCommand.args) {
 		t.Errorf("expected: %v, got: %v", expectedCommand, store.transactions[transactionId].commands[0])
@@ -287,7 +287,7 @@ func TestQueueCommand_NoOnGoingTransactionPresent(t *testing.T) {
 func TestDiscardTransaction_OnGoingTransactionPresent(t *testing.T) {
 	store := getInMemoryStore(t)
 	transactionId := "1"
-	store.transactions[transactionId] = &Transaction{}
+	store.transactions[transactionId] = &transaction{}
 
 	err := store.DiscardTransaction(transactionId)
 
@@ -314,8 +314,8 @@ func TestDiscardTransaction_NoOnGoingTransactionPresent(t *testing.T) {
 func TestExecuteTransaction_OnGoingTransactionPresent(t *testing.T) {
 	store := getInMemoryStore(t)
 	transactionId := "1"
-	store.transactions[transactionId] = &Transaction{
-		commands: []Command{
+	store.transactions[transactionId] = &transaction{
+		commands: []command{
 			{name: "GET", args: []string{"a"}},
 			{name: "SET", args: []string{"a", "1"}},
 			{name: "GET", args: []string{"a"}},
@@ -353,8 +353,8 @@ func TestExecuteTransaction_ShouldRollbackOnError(t *testing.T) {
 	store := getInMemoryStore(t)
 	store.Set(0, "a", "1")
 	transactionId := "1"
-	store.transactions[transactionId] = &Transaction{
-		commands: []Command{
+	store.transactions[transactionId] = &transaction{
+		commands: []command{
 			{name: "GET", args: []string{"a"}},
 			{name: "INCR", args: []string{"a"}},
 			{name: "SET", args: []string{"b", "b"}},
@@ -381,8 +381,8 @@ func TestExecuteTransaction_ShouldRollbackForUnknownCommand(t *testing.T) {
 	store := getInMemoryStore(t)
 	transactionId := "1"
 	unknownCommand := "UNKNOWN"
-	store.transactions[transactionId] = &Transaction{
-		commands: []Command{
+	store.transactions[transactionId] = &transaction{
+		commands: []command{
 			{name: unknownCommand, args: []string{"a"}},
 		},
 		originalValues: make(map[string]*string),
